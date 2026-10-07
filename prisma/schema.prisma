@@ -1,0 +1,470 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SALES_REP
+  PHYSICIAN
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BankAccountType {
+  CHECKING
+  SAVINGS
+}
+
+enum BankOwnershipType {
+  PERSONAL
+  BUSINESS
+}
+
+model Admin {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SalesRepresentative {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  firstName         String
+  lastName          String
+  email             String   @unique
+  loginId           String?  @unique
+  website           String?
+  password          String
+  phone             String?
+  ordersCount       Int      @default(0)
+  commission        Float    @default(0)
+  walletBalance     Float    @default(0)
+  billingAddress    String?
+  shippingAddress   String?
+  bankName              String?
+  bankAccountNumber     String?
+  bankAccountName       String?
+  bankAccountType       BankAccountType?
+  bankOwnershipType     BankOwnershipType?
+  swiftCode             String?
+  routingNumber         String?
+  bankNotifyRequested   Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
+
+  physicians  PartneringPhysician[]
+  orderItems  Order[]
+}
+
+model Category {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  slug          String        @unique
+  description   String?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  subCategories SubCategory[]
+  products      Product[]
+}
+
+model SubCategory {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  slug        String    @unique
+  description String?
+  isActive    Boolean   @default(true)
+  categoryId  String    @db.ObjectId
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+model Product {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  title          String
+  slug           String        @unique
+  description    String?
+  image          String?
+  imageGallery   String[]
+  salePrice      Float
+  costPrice      Float
+  compareAtPrice Float?
+  quantity       Int           @default(0)
+  discount       Float         @default(0)
+  sku            String        @unique
+  gtin           String?
+  weight         Float?
+  weightUnit     String        @default("kg")
+  tags           String[]
+  variants       Json[]
+  status         ProductStatus @default(ACTIVE)
+  categoryId     String?       @db.ObjectId
+  subCategoryId  String?       @db.ObjectId
+  category       Category?     @relation(fields: [categoryId], references: [id])
+  subCategory    SubCategory?  @relation(fields: [subCategoryId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model PartneringPhysician {
+  id                  String         @id @default(auto()) @map("_id") @db.ObjectId
+  isApproved          ApprovalStatus @default(PENDING)
+  firstName           String
+  lastName            String
+  email               String         @unique
+  loginId             String?        @unique
+  password            String
+  // True when the physician (or whoever created the account on their behalf)
+  // explicitly set this password at creation, rather than it being an
+  // unknown placeholder — drives the welcome email's dynamic Login Info
+  // password line. Always true for accounts created after this field
+  // shipped; false/missing for older records.
+  hasCustomPassword   Boolean        @default(false)
+  aictherapy          String?
+  license             String?
+  websiteLink         String?
+  addressOne          String?
+  addressTwo          String?
+  city                String?
+  state               String?
+  zipCode             String?
+  country             String?
+  phone               String?
+  officeContactNumber String?
+  fax                 String?
+  nameOfPractice      String?
+  yearsInPractice     Int?
+  credential          String?
+  patientsPerMonth    Int?
+  fieldsOfSpeciality  String[]
+  commission          Float          @default(0)
+  uplineCommission    Float          @default(0)
+  salesRepNote        String?
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
+  bankName              String?
+  bankAccountNumber     String?
+  bankAccountName       String?
+  bankAccountType       BankAccountType?
+  bankOwnershipType     BankOwnershipType?
+  swiftCode             String?
+  routingNumber         String?
+  bankNotifyRequested   Boolean        @default(false)
+  walletBalance         Float          @default(0)
+  ordersCount         Int            @default(0)
+  addedByRole         Role
+  addedByAdminId      String?        @db.ObjectId
+  salesRepId          String?        @db.ObjectId
+  salesRep            SalesRepresentative? @relation(fields: [salesRepId], references: [id])
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  orderItems  Order[]
+}
+
+model CatalogDocument {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  uploadedBy String   @db.ObjectId
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id                        String               @id @default(auto()) @map("_id") @db.ObjectId
+  orderNumber               String               @unique
+
+  physicianId               String?              @db.ObjectId
+  physician                 PartneringPhysician? @relation(fields: [physicianId], references: [id])
+
+  salesRepId                String?              @db.ObjectId
+  salesRep                  SalesRepresentative? @relation(fields: [salesRepId], references: [id])
+
+  items                     Json[]
+
+  subtotal                  Float
+  total                     Float
+
+  // Rates snapshotted at order creation — never recalculated on rate changes
+  salesRepCommissionRate    Float                @default(0)
+  salesRepCommissionAmount  Float                @default(0)
+  physicianCommissionRate   Float                @default(0)
+  physicianCommissionAmount Float                @default(0)
+
+  status                    OrderStatus          @default(PENDING)
+  commissionPaid            Boolean              @default(false)
+  billingAddress            String?
+  shippingAddress           String?
+  shippingRate              Float                @default(0)
+  // The shipping option the customer selected at checkout (e.g. "Shipping
+  // United States Flat Rate" or "FedEx 2Day Shipping") — distinct from
+  // shippingCarrier, which only gets set once an admin actually buys a
+  // label. Lets the admin know to buy an expedited label for this order.
+  shippingMethod            String?
+  shippingCarrier           String?
+  trackingNumber            String?
+  estimatedDelivery         DateTime?
+  paymentMethod             String?
+  paymentStatus             String?
+  transactionId             String?
+  stripePaymentIntentId     String?
+  notes                     String?
+
+  couponCode                String?
+  couponId                  String?              @db.ObjectId
+  discountAmount            Float                @default(0)
+
+  customerEmail             String?
+  customerPhone             String?
+
+  placedByAdmin             Boolean              @default(false)
+  placedBySalesRep          Boolean              @default(false)
+
+  // Return / clawback fields
+  returnedAt                DateTime?
+  returnReason              String?
+  returnedItems             Json?                // null = full return, array of item indexes = partial
+  returnedTotal             Float?               // $ value of returned items
+  salesRepClawback          Float?               // deducted from sales rep wallet
+  physicianClawback         Float?               // informational — physician has no wallet
+
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+}
+
+model OrderRefund {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderId           String   @db.ObjectId
+  refundNumber      Int
+  items             Json?    // Array<{index, returnedQty, lineTotal}>; null = legacy full-refund marker
+  total             Float
+  salesRepClawback  Float    @default(0)
+  physicianClawback Float    @default(0)
+  reason               String?
+  customerRefundMethod String?  // "manual" | "stripe"
+  customerRefundAmount Float?
+  stripeRefundId       String?
+  processedAt          DateTime @default(now())
+}
+
+model Coupon {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  code           String    @unique
+  description    String?
+  discountType   String    @default("PERCENTAGE")
+  discountValue  Float
+  minOrderAmount Float?
+  maxUses        Int?
+  usedCount      Int       @default(0)
+  expiresAt      DateTime?
+  isActive       Boolean   @default(true)
+  applicableTo   String    @default("ALL")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Shipment {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderId        String   @db.ObjectId
+  carrier        String
+  carrierLabel   String
+  service        String
+  serviceCode    String
+  trackingNumber String
+  labelBase64    String?
+  labelFormat    String   @default("PNG")
+  // Physical label page size requested from the carrier: "4X6" (thermal
+  // printer) or "LETTER" (8.5x11, normal paper printer).
+  labelSize      String   @default("4X6")
+  // True for a return shipping label (customer -> warehouse), false for a
+  // normal outbound label (warehouse -> customer).
+  isReturn       Boolean  @default(false)
+  fromAddress    Json
+  toAddress      Json
+  weightLbs      Float
+  lengthIn       Float?
+  widthIn        Float?
+  heightIn       Float?
+  cost           Float    @default(0)
+  currency       String   @default("USD")
+  status         String   @default("created")
+  shipDate       DateTime @default(now())
+  createdAt      DateTime @default(now())
+}
+
+model OrderNote {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderId   String   @db.ObjectId
+  type      String   // "private" | "customer"
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model WalletTransaction {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  userRole    Role
+  amount      Float
+  type        String
+  description String?
+  orderId     String?  @db.ObjectId
+  // Commission period ("YYYY-MM", in PAYOUT_TIMEZONE) this transaction is
+  // attributed to. Set on period-close commission credits and on any
+  // reversal (the period the reversal happened in, not the order's period).
+  periodKey   String?
+  balance     Float
+  createdAt   DateTime @default(now())
+}
+
+enum WithdrawStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PayoutNotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model WithdrawRequest {
+  id                       String                   @id @default(auto()) @map("_id") @db.ObjectId
+  userId                   String                   @db.ObjectId
+  userRole                 Role
+  amount                   Float
+  status                   WithdrawStatus          @default(PENDING)
+  note                     String?
+  adminNote                String?
+  periodKey                String?
+  snapshotAt               DateTime?
+  notificationStatus       PayoutNotificationStatus @default(PENDING)
+  notificationAttempts     Int                      @default(0)
+  notificationLastAttemptAt DateTime?
+  notificationLastError    String?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+}
+
+model Banner {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  imageUrl    String
+  linkUrl     String?
+  isPublished Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Blog {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  slug        String    @unique
+  excerpt     String?
+  content     String?
+  imageUrl    String?
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model WebsiteBanner {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  subtitle    String?
+  buttonText  String?
+  imageUrl    String
+  linkUrl     String?
+  isPublished Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum ShippingMethod {
+  FLAT
+  FREE
+  LOCAL_PICKUP
+  FEDEX_2DAY
+}
+
+model ShippingRate {
+  id          String         @id @default(auto()) @map("_id") @db.ObjectId
+  continent   String
+  country     String         // ISO 2-letter code e.g. "US"
+  countryName String         // Full name e.g. "United States"
+  // empty = country-wide rule; populated = applies only to these state codes
+  states      String[]
+  stateNames  String[]
+  method      ShippingMethod
+  cost        Float          @default(0)
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+enum EmailLogStatus {
+  QUEUED
+  SENT
+  FAILED
+  BOUNCED
+}
+
+model EmailLog {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  recipientEmail  String
+  subject         String
+  // Human-readable category, e.g. "Order Confirmation", "Welcome Email",
+  // "Password Reset" — null when the send site didn't classify itself.
+  type            String?
+  // Free-form pointer back to the record this email is about, e.g. an
+  // order number or a user id — null when not applicable.
+  relatedId       String?
+  status          EmailLogStatus @default(QUEUED)
+  // "sendgrid" | "smtp" — which transport ultimately handled (or attempted) the send.
+  provider        String?
+  errorMessage    String?
+  responsePayload Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}

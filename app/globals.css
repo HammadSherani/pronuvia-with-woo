@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+html {
+  scroll-behavior: smooth;
+}
+
+section[id] {
+  scroll-margin-top: 72px;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --pronuvia-teal: #1b3b6f;
+  --pronuvia-blue: #5bb8d4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
+
+  /* Website design tokens */
+  --color-cream: #F5F3EE;
+  --color-ink: #0B1220;
+  --color-ion: #1b3b6f;
+  --color-card: #FFFFFF;
+  --color-border: #E2E8F0;
+  --color-muted: #F1F5F9;
+  --color-muted-foreground: #b6b8ba;
+}
+
+/* ── Website utility classes ── */
+.eyebrow {
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+@keyframes ion-pulse {
+  0%, 100% { transform: scale(1);    opacity: 0.55; }
+  50%       { transform: scale(1.15); opacity: 1;    }
+}
+@keyframes ion-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-ion-pulse { animation: ion-pulse 3.6s ease-in-out infinite; }
+.animate-ion-orbit { animation: ion-orbit 22s linear infinite; }
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 28s linear infinite;
+}
+
+/* Tiptap editor placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Tiptap prose styles */
+.tiptap h1 { font-size: 1.75rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+.tiptap h2 { font-size: 1.4rem;  font-weight: 700; margin: 1rem 0 0.5rem; }
+.tiptap h3 { font-size: 1.15rem; font-weight: 600; margin: 0.75rem 0 0.4rem; }
+.tiptap p  { margin: 0.4rem 0; }
+.tiptap ul  { list-style: disc;    padding-left: 1.4rem; margin: 0.5rem 0; }
+.tiptap ol  { list-style: decimal; padding-left: 1.4rem; margin: 0.5rem 0; }
+.tiptap blockquote { border-left: 3px solid #3DBFA4; padding-left: 1rem; color: #6b7280; margin: 0.75rem 0; }
+.tiptap code { background: #f3f4f6; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.875em; }
+.tiptap hr { border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0; }
+.tiptap a { color: #3DBFA4; text-decoration: underline; }
+
+/* Hide scrollbar for social strip */
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Hide Stripe Link floating badge */
+iframe[name*="privateStripeController"],
+iframe[name*="stripe-pay-with-link"],
+iframe[name*="stripeLink"],
+iframe[title="Stripe Link"],
+[data-js-forms-banner],
+body > div[style*="position: fixed"][style*="bottom"][style*="right"] { display: none !important; }
+
+/* Remove default input autofill background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px white inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+
+._9er_pF0e__Easel {
+  display: none !important;
+}

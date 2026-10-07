@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/auto-withdraw",
+      "schedule": "1 5 * * *"
+    },
+    {
+      "path": "/api/cron/payout-notifications",
+      "schedule": "15 1 * * *"
+    },
+    {
+      "path": "/api/cron/manual-sweep?period=2026-09",
+      "schedule": "1 4 10 9 *"
+    }
+  ]
+}
