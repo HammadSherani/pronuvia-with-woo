@@ -4,7 +4,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 | Phase | Kaam | Risk | Status |
 | --- | --- | --- | --- |
-| 1 | Foundation + security | Low | Not started |
+| 1 | Foundation + security | Low | Done (WP: dummy products + store address pending) |
 | 2 | Catalog (products, categories, stock) | Medium | Store mein data ho chuka, code baqi |
 | 3 | Customers + structured addresses | Medium | Not started |
 | 4 | Shipping rates → Woo zones | High | Not started |
@@ -38,17 +38,33 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 **Testing**
 
-- [ ] Admin, sahi keys → health 200, currency USD, products count
-- [ ] Bina login / sales rep / physician → health 401
-- [ ] Galat secret → 401 (LiteSpeed cache off hone ke baad)
-- [ ] Bina key ke `/wp-json/wc/v3/settings/...` → 401 (pehle cache se data mil raha tha)
-- [ ] Woo site down ya galat URL → 503 + saaf message, page hang na ho
-- [ ] `WOO_URL` http:// → request bheje bina error
-- [ ] Build ke baad client bundle mein `ck_` / `cs_` / `WOO_CONSUMER` → 0 hits
-- [ ] Client component se Woo client import → build fail
-- [ ] Test routes bina admin login → 401 / 404
+- [x] Admin, sahi keys → health 200, currency USD, products count
+- [x] Bina login / sales rep / physician → health 401
+- [x] Galat secret → 401 (LiteSpeed cache off hone ke baad)
+- [x] Bina key ke `/wp-json/wc/v3/settings/...` → 401 (pehle cache se data mil raha tha)
+- [x] Woo site down ya galat URL → 503 + saaf message, page hang na ho
+- [x] `WOO_URL` http:// → request bheje bina error
+- [x] Build ke baad client bundle mein `ck_` / `cs_` / `WOO_CONSUMER` → 0 hits
+- [x] Client component se Woo client import → build fail
+- [x] Test routes bina admin login → 401 / 404
+
+- [x] `/api/health` public → sirf up/down; admin → env + DB details
 
 **Done kab:** Connection secure ho, cache masla khatam, test routes band.
+
+**Kya bana (2026-10-07)**
+
+- `lib/woo/client.ts` (server-only `wooFetch`: HTTPS check, 15s timeout, GET par 2 retries, `WooError`, optional Next.js cache), `lib/woo/health.ts`, `GET /api/woo/health` (sirf admin).
+- `lib/auth/api-guard.ts` → `rejectUnlessAdmin()`. `/api/test-ups`, `/api/test-usps`, `/api/test-email`, `/api/shipping/rates` ab sirf admin. Pehle bina login ke UPS label kharida ja sakta tha aur kisi ko bhi email bheji ja sakti thi.
+- `/api/health`: public ko sirf database up/down; pehle `DATABASE_URL` ke pehle 20 characters (username) bhi dikhte the.
+- `.env` / `.env.example` mein `WOO_URL`, `WOO_CONSUMER_KEY`, `WOO_CONSUMER_SECRET`, `WOO_WEBHOOK_SECRET`.
+- Woo side: LiteSpeed REST cache off (bina key 401), currency USD.
+
+**Note:** Host bilkul jawab na de to error ~33 second baad aata hai (har try par ~10s connect timeout, 3 tries). Saaf error milta hai, lekin page itni der rukta hai.
+
+**Pending (WP developer):** 3 dummy "Google Pixel" products + "Smartphones" / "Google Pixel" categories delete; store address (street, city, ZIP) bharein; weight unit (lbs / kg) final.
+
+**Pending (aap):** Vercel par bhi yehi 4 `WOO_*` env vars add karein.
 
 ---
 
