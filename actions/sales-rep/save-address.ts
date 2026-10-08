@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 export type { AddressData } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 export async function saveCheckoutAddress(data: {
   shipping: AddressData;
@@ -20,6 +21,7 @@ export async function saveCheckoutAddress(data: {
         billingAddress:  JSON.stringify(data.billing),
       },
     });
+    scheduleWooCustomerSync("SALES_REP", session.userId);
     revalidatePath("/sales/checkout");
     return { success: true };
   } catch {
