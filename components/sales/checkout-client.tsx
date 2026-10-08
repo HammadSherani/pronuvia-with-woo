@@ -307,6 +307,7 @@ export function CheckoutClient({
     title:       i.productTitle,
     variantSize: i.variantSize,
     sku:         i.variantSku,
+    variationId: i.variationId ?? null,
     unitPrice:   i.unitPrice,
     quantity:    i.quantity,
     lineTotal:   parseFloat((i.unitPrice * i.quantity).toFixed(2)),

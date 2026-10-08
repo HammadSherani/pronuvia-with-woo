@@ -10,9 +10,18 @@ export type CartItem = {
   productImage: string | null;
   variantSize:  string;
   variantSku:   string;
+  // WooCommerce variation id (null for a simple product). Optional so carts
+  // saved before the Woo switch still type-check; those are dropped on load.
+  variationId?: number | null;
   unitPrice:    number;
   quantity:     number;
 };
+
+// Product ids are WooCommerce ids (numeric) now. Items saved while the catalog
+// lived in MongoDB carry 24-char ObjectIds and can't be ordered any more.
+function isWooCartItem(item: CartItem) {
+  return /^\d+$/.test(item.productId);
+}
 
 type CartContextValue = {
   items:      CartItem[];
@@ -47,7 +56,8 @@ export function CartProvider({ userId, cartKey, children }: { userId?: string; c
     didRead.current = true;
     try {
       const raw = localStorage.getItem(storageKey);
-      setItems(raw ? JSON.parse(raw) : []);
+      const saved: CartItem[] = raw ? JSON.parse(raw) : [];
+      setItems(saved.filter(isWooCartItem));
     } catch { setItems([]); }
     setHydrated(true);
   }, [storageKey]);

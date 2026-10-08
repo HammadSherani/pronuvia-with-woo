@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
@@ -7,7 +7,7 @@ import { useCart } from "@/lib/cart/cart-context";
 import { formatCurrency } from "@/lib/utils/currency";
 
 type VariantStatus = "in_stock" | "out_of_stock" | "discontinued" | "inactive";
-type Variant  = { size?: string; salePrice?: number; stock?: number; sku?: string; status?: VariantStatus; isDefault?: boolean };
+type Variant  = { size?: string; salePrice?: number; stock?: number; sku?: string; status?: VariantStatus; isDefault?: boolean; variationId?: number | null };
 
 function variantStatus(v: Variant): VariantStatus { return v.status ?? "in_stock"; }
 function isAvailable(v: Variant) { return variantStatus(v) === "in_stock"; }
@@ -60,6 +60,7 @@ function ProductCard({ product, basePath }: { product: Product; basePath: string
       productImage: product.image,
       variantSize,
       variantSku,
+      variationId: selected?.variationId ?? null,
       unitPrice,
       quantity: qty,
     });

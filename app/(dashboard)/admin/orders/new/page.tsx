@@ -1,7 +1,8 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db/prisma";
-import { ApprovalStatus, ProductStatus } from "@/generated/prisma/enums";
+import { ApprovalStatus } from "@/generated/prisma/enums";
+import { getShopProducts } from "@/lib/woo/catalog";
 import { CreateOrderForm } from "@/components/admin/create-order-form";
 
 export const metadata = { title: "Create Order – Pronuvia Admin" };
@@ -19,11 +20,12 @@ export default async function NewOrderPage() {
       },
       orderBy: { firstName: "asc" },
     }),
-    prisma.product.findMany({
-      where: { status: ProductStatus.ACTIVE },
-      select: { id: true, title: true, variants: true, sku: true, salePrice: true },
-      orderBy: { title: "asc" },
-    }),
+    getShopProducts()
+      .then((list) => list.sort((a, b) => a.title.localeCompare(b.title)))
+      .catch((e) => {
+        console.error("[orders/new] WooCommerce products failed:", e);
+        return [];
+      }),
   ]);
 
   return (

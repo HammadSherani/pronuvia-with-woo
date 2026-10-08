@@ -1,22 +1,16 @@
-﻿import Link from "next/link";
-import { getProducts, deleteProduct } from "@/actions/admin/products";
+import { Suspense } from "react";
+import { requireAdmin } from "@/lib/auth/dal";
+import { getAdminProducts, type AdminProduct } from "@/lib/woo/catalog";
+import { wpAdmin } from "@/lib/woo/admin-links";
 import { PageHeader } from "@/components/admin/page-header";
-import { DeleteButton } from "@/components/admin/delete-button";
+import { WooManagedNotice } from "@/components/admin/woo-managed-notice";
 import { Pagination } from "@/components/shared/pagination";
 import { parsePagination } from "@/lib/pagination";
 import { formatCurrency } from "@/lib/utils/currency";
-import { Suspense } from "react";
-
-type Variant = { sku?: string };
-
-function variantSkus(variants: unknown): string {
-  const list = (variants as Variant[] | undefined)?.map((v) => v.sku).filter(Boolean) as string[] | undefined;
-  return list?.length ? list.join(", ") : "—";
-}
 
 export const metadata = { title: "Products – Pronuvia Admin" };
 
-const STATUS_STYLES = {
+const STATUS_STYLES: Record<AdminProduct["status"], string> = {
   ACTIVE:   "bg-emerald-50 text-emerald-700",
   DRAFT:    "bg-amber-50 text-amber-700",
   ARCHIVED: "bg-gray-100 text-gray-500",
@@ -27,32 +21,29 @@ export default async function ProductsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAdmin();
   const sp = await searchParams;
   const { page, pageSize, skip, take } = parsePagination(sp);
-  const { products, total } = await getProducts({ skip, take });
+
+  let products: AdminProduct[] | null = null;
+  try {
+    products = await getAdminProducts();
+  } catch (e) {
+    console.error("[admin/products] WooCommerce failed:", e);
+  }
+  const total = products?.length ?? 0;
+  const pageItems = products?.slice(skip, skip + take) ?? [];
 
   return (
     <div>
-      <PageHeader
-        title="Products"
-        description={`Manage your product catalogue (${total} total)`}
-        actionLabel="Add Product"
-        actionHref="/admin/products/new"
-      />
+      <PageHeader title="Products" description={`Product catalogue from WooCommerce (${total} total)`} />
+      <WooManagedNotice what="Products" href={wpAdmin.products()} />
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        {total === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
-              </svg>
-            </div>
-            <p className="text-sm font-medium text-gray-500">No products yet</p>
-            <Link href="/admin/products/new" className="mt-3 text-sm text-[#3DBFA4] hover:underline font-medium">
-              Add your first product
-            </Link>
-          </div>
+        {products === null ? (
+          <p className="py-16 text-center text-sm text-gray-500">Could not load products from WooCommerce. Please refresh.</p>
+        ) : total === 0 ? (
+          <p className="py-16 text-center text-sm text-gray-500">No products in WooCommerce yet.</p>
         ) : (
           <>
             <table className="w-full text-sm">
@@ -68,7 +59,7 @@ export default async function ProductsPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {products.map((p) => (
+                {pageItems.map((p) => (
                   <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -82,10 +73,17 @@ export default async function ProductsPage({
                             </svg>
                           )}
                         </div>
-                        <span className="font-medium text-gray-800 line-clamp-1">{p.title}</span>
+                        <div>
+                          <span className="font-medium text-gray-800 line-clamp-1">{p.title}</span>
+                          {p.variants.length > 1 && (
+                            <span className="text-xs text-gray-400">{p.variants.map((v) => v.size).join(", ")}</span>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-400 font-mono text-xs">{variantSkus(p.variants)}</td>
+                    <td className="px-5 py-3.5 text-gray-400 font-mono text-xs">
+                      {p.variants.map((v) => v.sku).filter(Boolean).join(", ") || p.sku || "—"}
+                    </td>
                     <td className="px-5 py-3.5 text-gray-500">
                       {p.category ? (
                         <span>
@@ -95,22 +93,21 @@ export default async function ProductsPage({
                       ) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-5 py-3.5 font-medium text-gray-800">{formatCurrency(p.salePrice)}</td>
-                    <td className="px-5 py-3.5 text-gray-600">{p.quantity}</td>
+                    <td className="px-5 py-3.5 text-gray-600">
+                      {p.variants.length > 0 && p.variants.every((v) => v.status !== "in_stock")
+                        ? <span className="text-red-500 font-medium">Out of stock</span>
+                        : (p.stock ?? "—")}
+                    </td>
                     <td className="px-5 py-3.5">
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[p.status]}`}>
                         {p.status.charAt(0) + p.status.slice(1).toLowerCase()}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-4 justify-end">
-                        <Link href={`/admin/products/${p.id}`} className="text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors">
-                          View
-                        </Link>
-                        <Link href={`/admin/products/${p.id}/edit`} className="text-xs font-medium text-[#5BB8D4] hover:text-[#3a9db8] transition-colors">
-                          Edit
-                        </Link>
-                        <DeleteButton action={deleteProduct.bind(null, p.id)} />
-                      </div>
+                    <td className="px-5 py-3.5 text-right">
+                      <a href={wpAdmin.editProduct(p.id)} target="_blank" rel="noopener noreferrer"
+                        className="text-xs font-medium text-[#5BB8D4] hover:text-[#3a9db8] transition-colors">
+                        Edit in WooCommerce
+                      </a>
                     </td>
                   </tr>
                 ))}

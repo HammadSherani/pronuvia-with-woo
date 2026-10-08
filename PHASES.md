@@ -5,7 +5,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | Phase | Kaam | Risk | Status |
 | --- | --- | --- | --- |
 | 1 | Foundation + security | Low | Done (WP: dummy products + store address pending) |
-| 2 | Catalog (products, categories, stock) | Medium | Store mein data ho chuka, code baqi |
+| 2 | Catalog (products, categories, stock) | Medium | Done (dummy products cleanup pending) |
 | 3 | Customers + structured addresses | Medium | Not started |
 | 4 | Shipping rates → Woo zones | High | Not started |
 | 5 | Coupons + server-side totals | High | Not started |
@@ -72,34 +72,48 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 **Goal:** Products, sizes, stock aur categories ka source of truth WooCommerce ho. Teeno shops Woo se chalein.
 
+**Faisla (2026-10-08):** Naya Mongo DB khali hai (sirf 1 admin), is liye Mongo → Woo migration (purane steps 1–4) ki zarurat nahi. Woo mein pehle se 7 asli products / 8 sizes hain; wahi source of truth hain.
+
 **Steps**
 
-1. Migration route (`POST /api/woo/migrate-catalog`, `?dryRun=1`): Category → Woo category, SubCategory → child category, Product → variable product (attribute "Size"), variants → variations. Idempotent: parent SKU `PRN-P-<mongoId>`, variation SKU = variant SKU. (Store mein 7 products / 8 sizes pehle se hain, script inhein update karegi.)
-2. Variant `status` mapping: `in_stock` → instock, `out_of_stock` → outofstock, `discontinued` / `inactive` → variation disabled (private).
-3. Weight Mongo unit se store unit mein convert. Cost price, GTIN → variation meta.
-4. Images: Cloudinary URLs seedha Woo ko; local `/uploads` ke liye WP Application Password.
-5. `lib/woo/catalog.ts` (60s cache): **sales shop, physician shop, admin order-behalf shop** aur product detail pages Woo se.
-6. Cart item mein `productId` = Woo product id, plus `variationId`. Purana localStorage cart version-check se clear ho.
-7. `validateCartItemsAvailability` Woo se check kare (stock_status + stock quantity).
-8. Admin products/categories pages: list Woo se, add/edit WP admin par redirect.
+1. `lib/woo/catalog.ts`: Woo products / variations / categories ko shop ke purane shape mein map karta hai (60s cache). Variation status mapping: disabled (private) → `inactive` (chhupa), meta `_pronuvia_status = discontinued` → `discontinued`, `outofstock` → `out_of_stock`, warna `in_stock`. Default size = Woo "default attribute". Simple product = ek size "Standard".
+2. **Sales shop, physician shop, admin order-behalf shop** aur sales / physician product detail pages Woo se. Woo down ho to "temporarily unavailable".
+3. Cart item mein `variationId`; checkout ke items JSON mein bhi. Purane cart items (Mongo ObjectId) load par khud hat jate hain.
+4. `validateCartItemsAvailability` Woo se (hamesha taaza): product published, size mojood, status, aur tracked stock vs quantity (ek size kai lines par ho to total).
+5. Admin: Products list Woo se (pagination ke saath, "Edit in WooCommerce"); Categories / Sub-Categories lists Woo se; product / category add / edit pages WP admin par redirect.
+6. Admin "Create Order" product list aur Reports ka product filter Woo se.
+7. Label kharidne par aur return par Mongo stock update ab sirf purane (Mongo id wale) items ke liye; Woo stock Phase 6 / 9 mein.
 
 **Testing**
 
-- [ ] Dry run → kuch nahi likha jata, report sahi counts dikhaye
-- [ ] Mongo vs Woo: products, sizes, categories count barabar
-- [ ] Har size ki price, stock, SKU, weight match
-- [ ] Migration dobara → koi duplicate nahi
-- [ ] `discontinued` size → kisi shop mein nazar na aaye
-- [ ] `out_of_stock` size → dikhe magar select / add to cart na ho
-- [ ] Draft / archived product → teeno shops mein gayab
-- [ ] WP mein price badlein → ~1 min mein teeno shops par nayi price
-- [ ] Purana cart (Mongo ids wala) → saaf ho jaye, checkout crash na ho
-- [ ] Cart mein item, phir WP mein woh out of stock → checkout par saaf error
-- [ ] Bina image product, aur lambi description → UI na toote
-- [ ] Woo down → shops par "temporarily unavailable", crash nahi
-- [ ] Migration route bina admin → 401
+- [x] Teeno shops (sales rep, physician, admin behalf) → Woo ke products, categories, prices
+- [x] Product detail (sales + physician) → sizes, prices, category, image (WP media)
+- [x] Simple product → ek size "Standard", order validate hota hai
+- [x] Disabled size → kisi shop mein nazar nahi aata, checkout par "no longer available"
+- [x] `discontinued` size → crossed-out aur select nahi hota (purane UI ka design), checkout par "discontinued"
+- [x] Out of stock size → select / add to cart disabled, checkout par "out of stock"
+- [x] Draft product → teeno shops se gayab, detail page 404, checkout par "no longer available"
+- [x] WP mein price badli → ~1 min mein teeno shops par nayi price
+- [x] Stock 3, qty 5 → "Only 3 left"; 2 + 2 do lines par → bhi block; qty 3 → OK
+- [x] Purana cart (Mongo id) → load par hat jata hai (filter logic tested; browser mein test baqi)
+- [x] Purana Mongo id checkout tak pohanche → "no longer available"
+- [x] Ghalat size → "no longer exists"
+- [ ] Bina image product, aur lambi description → UI na toote  _(bina image tested; lambi description test nahi hui)_
+- [x] Woo down → teeno shops + detail par "temporarily unavailable", admin lists par "Could not load", crash nahi
+- [x] Admin products: status (Active / Draft), SKUs, sizes, out-of-stock label, pagination
+- [x] Admin categories / sub-categories → Woo se, parent sahi
+- [x] Add / edit pages → WP admin par redirect
+- [x] Sales rep / physician → admin catalog pages par redirect (unauthorized)
 
 **Done kab:** Teeno shops aur cart Woo IDs par chalein, saara data match ho.
+
+**Notes**
+
+- Woo down ho to admin "Create Order" page khulta hai lekin product list khali hoti hai (koi message nahi).
+- Woo stock order par abhi kam nahi hota; Phase 6 mein hoga.
+- Purani files (product / category forms, `actions/admin/products.ts` waghera) abhi rakhi hain; Phase 10 cleanup mein hatengi.
+
+**Pending (WP developer):** dummy "Google Pixel" products abhi bhi shops mein dikh rahe hain.
 
 ---
 

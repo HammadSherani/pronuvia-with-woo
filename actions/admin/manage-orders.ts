@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
@@ -767,6 +767,8 @@ export async function processReturn(
   await Promise.all(linesToProcess.map(async rl => {
     const item = items[rl.index];
     if (!item?.productId || !rl.returnedQty) return;
+    // Woo-catalog items (numeric ids) are restocked in WooCommerce, not here
+    if (!/^[a-f0-9]{24}$/i.test(item.productId)) return;
     try {
       const product = await prisma.product.findUnique({ where: { id: item.productId } });
       if (!product) return;

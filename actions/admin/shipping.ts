@@ -328,6 +328,9 @@ export async function purchaseLabel(
     await Promise.all(
       orderItems
         .filter(it => it.productId && it.quantity)
+        // Woo-catalog items (numeric ids) have their stock managed in
+        // WooCommerce; only legacy Mongo products are decremented here.
+        .filter(it => /^[a-f0-9]{24}$/i.test(it.productId!))
         .map(async it => {
           try {
             const product = await prisma.product.findUnique({ where: { id: it.productId! } });

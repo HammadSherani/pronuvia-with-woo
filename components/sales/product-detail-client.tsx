@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -8,7 +8,7 @@ import { useCart } from "@/lib/cart/cart-context";
 import { formatCurrency } from "@/lib/utils/currency";
 
 type VariantStatus = "in_stock" | "out_of_stock" | "discontinued" | "inactive";
-type Variant = { size?: string; salePrice?: number; stock?: number; sku?: string; image?: string; status?: VariantStatus; isDefault?: boolean };
+type Variant = { size?: string; salePrice?: number; stock?: number; sku?: string; image?: string; status?: VariantStatus; isDefault?: boolean; variationId?: number | null };
 
 function defaultSelectableIdx(variants: Variant[]): number {
   const defaultIdx = variants.findIndex((v) => v.isDefault);
@@ -168,6 +168,7 @@ export function ProductDetailClient({ product, related, basePath = "/sales/shop"
       productImage: product.image,
       variantSize:  selectedVariant?.size ?? "",
       variantSku:   selectedVariant?.sku  ?? "",
+      variationId:  selectedVariant?.variationId ?? null,
       unitPrice:    displayPrice,
       quantity:     qty,
     });
