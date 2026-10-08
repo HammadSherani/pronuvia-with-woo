@@ -1,10 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Country, State } from "country-state-city";
 import type { SalesRepActionState } from "@/actions/admin/manage-sales-reps";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 interface SalesRepFormProps {
   action: (state: SalesRepActionState, formData: FormData) => Promise<SalesRepActionState>;
@@ -74,14 +75,17 @@ export function SalesRepForm({ action, submitLabel, backHref, successRedirect, i
 
   const e = state?.errors ?? {};
 
-  function handleSubmit(ev: React.FormEvent<HTMLFormElement>) {
+  // Client-side check before the server action; returning false cancels submit
+  function checkAccountNumbers() {
     if (accNum && accNum !== confirmAccNum) {
-      ev.preventDefault();
       setAccNumError("Account numbers do not match");
-      return;
+      return false;
     }
     setAccNumError("");
   }
+
+  // Keeps typed values on screen when the server returns an error
+  const handleSubmit = useKeepValuesSubmit(formAction, checkAccountNumbers);
 
   function onAccNumChange(val: string) {
     setAccNum(val);
@@ -94,7 +98,7 @@ export function SalesRepForm({ action, submitLabel, backHref, successRedirect, i
   }
 
   return (
-    <form ref={formRef} action={formAction} onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} onSubmit={handleSubmit} noValidate>
 
       {/* ── Personal Info ── */}
       <div className={sec}>
