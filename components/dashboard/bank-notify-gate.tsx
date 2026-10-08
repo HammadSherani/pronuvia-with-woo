@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { updatePhysicianBankDetails } from "@/actions/physician/update-profile";
 import { updateSalesRepBankDetails } from "@/actions/sales-rep/profile";
 import type { UpdateProfileState } from "@/actions/physician/update-profile";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 const inp    = "w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900/30 transition bg-white";
 const inpErr = "w-full border border-red-400 rounded-lg px-3 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-300 transition bg-white";
@@ -25,6 +26,8 @@ export function BankNotifyGate({ role }: { role: "PHYSICIAN" | "SALES_REP" }) {
   const router = useRouter();
   const action = role === "PHYSICIAN" ? updatePhysicianBankDetails : updateSalesRepBankDetails;
   const [state, formAction, pending] = useActionState<UpdateProfileState, FormData>(action, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(formAction);
 
   const [accountNumber, setAccountNumber] = useState("");
   const [confirmAccountNumber, setConfirmAccountNumber] = useState("");
@@ -72,7 +75,7 @@ export function BankNotifyGate({ role }: { role: "PHYSICIAN" | "SALES_REP" }) {
           Add your bank information below to continue using the portal.
         </p>
 
-        <form action={formAction} className="space-y-4">
+        <form onSubmit={submitKeepingValues} className="space-y-4">
           <Field label="Bank Name *" error={e.bankName?.[0]}>
             <input name="bankName" required placeholder="e.g. Chase Bank" className={e.bankName ? inpErr : inp} />
           </Field>

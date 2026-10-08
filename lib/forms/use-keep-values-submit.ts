@@ -8,18 +8,20 @@ import { startTransition, useCallback, type FormEvent } from "react";
 // ourselves skips that automatic reset, so the user keeps what they typed.
 //
 //   const [state, formAction, pending] = useActionState(action, undefined);
-//   const submit = useKeepValuesSubmit(formAction);
+//   const submit = useKeepValuesSubmit(formAction, handleSubmit);
 //   <form onSubmit={submit}>…</form>
 //
-// `beforeSubmit` runs first; return false to cancel (e.g. client-side checks).
+// `beforeSubmit` runs first (client-side checks); it cancels the submission by
+// calling event.preventDefault() or returning false, as a plain onSubmit would.
 export function useKeepValuesSubmit(
   formAction: (formData: FormData) => void,
   beforeSubmit?: (event: FormEvent<HTMLFormElement>) => boolean | void,
 ) {
   return useCallback(
     (event: FormEvent<HTMLFormElement>) => {
+      const cancelled = beforeSubmit?.(event) === false || event.defaultPrevented;
       event.preventDefault();
-      if (beforeSubmit?.(event) === false) return;
+      if (cancelled) return;
       const formData = new FormData(event.currentTarget);
       startTransition(() => formAction(formData));
     },

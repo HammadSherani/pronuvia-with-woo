@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { Country, State } from "country-state-city";
 import { updateSalesRepProfile } from "@/actions/sales-rep/profile";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 type Rep = {
   firstName: string; lastName: string; email: string;
@@ -58,6 +59,8 @@ const lbl = "block text-xs font-medium text-gray-500 mb-1.5";
 
 export function SalesProfileForm({ rep }: { rep: Rep }) {
   const [state, action, pending]          = useActionState(updateSalesRepProfile, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(action, handleSubmit);
   const formRef                           = useRef<HTMLFormElement>(null);
   const [accNum,        setAccNum]        = useState(rep.bankAccountNumber ?? "");
   const [confirmAccNum, setConfirmAccNum] = useState(rep.bankAccountNumber ?? "");
@@ -90,7 +93,7 @@ export function SalesProfileForm({ rep }: { rep: Rep }) {
   }
 
   return (
-    <form ref={formRef} action={action} onSubmit={handleSubmit} className="space-y-6">
+    <form ref={formRef} onSubmit={submitKeepingValues} className="space-y-6">
       {state?.message && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           {state.message}

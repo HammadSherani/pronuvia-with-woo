@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import toast from "react-hot-toast";
 import { ImageUpload } from "@/components/admin/image-upload";
 import type { BannerActionState } from "@/actions/admin/banners";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 interface BannerFormProps {
   action: (state: BannerActionState, formData: FormData) => Promise<BannerActionState>;
@@ -24,6 +25,8 @@ export function BannerForm({ action, defaultValues }: BannerFormProps) {
   const [isPublished, setIsPublished] = useState(defaultValues?.isPublished ?? false);
 
   const [state, formAction, pending] = useActionState(action, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(formAction);
 
   useEffect(() => {
     if (state?.success) {
@@ -35,7 +38,7 @@ export function BannerForm({ action, defaultValues }: BannerFormProps) {
   }, [state, router]);
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form onSubmit={submitKeepingValues} className="space-y-6">
       {/* Hidden fields for controlled values */}
       <input type="hidden" name="imageUrl" value={imageUrl} />
       <input type="hidden" name="isPublished" value={isPublished ? "true" : "false"} />

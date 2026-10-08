@@ -7,6 +7,7 @@ import { updatePhysicianProfile, type UpdateProfileState } from "@/actions/physi
 import { AddressFields, type AddressData, EMPTY_ADDRESS } from "@/components/shared/address-fields";
 import { State, Country } from "country-state-city";
 import { formatDateLong } from "@/lib/utils/timezone";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 const SPECIALTIES = [
   "Cardiology","Dermatology","Endocrinology","Family Medicine","Gastroenterology",
@@ -170,6 +171,8 @@ function ViewMode({ p, onEdit }: { p: Physician; onEdit: () => void }) {
 
 function EditMode({ p, onCancel }: { p: Physician; onCancel: () => void }) {
   const [state, action, pending] = useActionState<UpdateProfileState, FormData>(updatePhysicianProfile, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(action);
   const router = useRouter();
   const [specialties, setSpecialties] = useState<string[]>(p.fieldsOfSpeciality ?? []);
   const [accountNumber, setAccountNumber]         = useState(p.bankAccountNumber ?? "");
@@ -225,7 +228,7 @@ function EditMode({ p, onCancel }: { p: Physician; onCancel: () => void }) {
   }
 
   return (
-    <form action={action} className="space-y-6">
+    <form onSubmit={submitKeepingValues} className="space-y-6">
       <input type="hidden" name="fieldsOfSpeciality" value={JSON.stringify(specialties)} />
 
       {/* Header */}

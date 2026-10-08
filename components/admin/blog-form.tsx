@@ -6,6 +6,7 @@ import dynamic             from "next/dynamic";
 import toast               from "react-hot-toast";
 import { ImageUpload }     from "@/components/admin/image-upload";
 import type { BlogActionState } from "@/actions/admin/blogs";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 const RichTextEditor = dynamic(
   () => import("@/components/admin/rich-text-editor").then((m) => m.RichTextEditor),
@@ -37,6 +38,8 @@ export function BlogForm({ action, defaultValues }: Props) {
   const [content,     setContent]     = useState(defaultValues?.content     ?? "");
 
   const [state, formAction, pending] = useActionState(action, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(formAction);
 
   useEffect(() => {
     if (state?.success) {
@@ -48,7 +51,7 @@ export function BlogForm({ action, defaultValues }: Props) {
   }, [state, router]);
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form onSubmit={submitKeepingValues} className="space-y-6">
       <input type="hidden" name="imageUrl"    value={imageUrl} />
       <input type="hidden" name="isPublished" value={isPublished ? "true" : "false"} />
       <input type="hidden" name="slug"        value={slug} />

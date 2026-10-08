@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Country, State } from "country-state-city";
 import type { PhysicianActionState } from "@/actions/admin/manage-physicians";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 type SalesRepOption = { id: string; name: string; email: string };
 
@@ -50,6 +51,8 @@ export function PhysicianForm({
   action, submitLabel, backHref, successRedirect, hideCommission, showNoteField, showDualCreate, requirePracticeFields, defaults, salesReps = [],
 }: PhysicianFormProps) {
   const [state, formAction, pending] = useActionState(action, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(formAction, handleSubmit);
   const router = useRouter();
 
   // Password fields only make sense when creating a new account — editing an
@@ -180,7 +183,7 @@ export function PhysicianForm({
   }
 
   return (
-    <form ref={formRef} action={formAction} onSubmit={handleSubmit} noValidate>
+    <form ref={formRef} onSubmit={submitKeepingValues} noValidate>
       <input type="hidden" name="fieldsOfSpeciality" value={JSON.stringify(specialties)} />
 
       {/* ── Personal Info ─────────────────────────────────── */}
