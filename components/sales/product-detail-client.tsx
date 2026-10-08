@@ -19,6 +19,12 @@ function defaultSelectableIdx(variants: Variant[]): number {
 function variantStatus(v: Variant): VariantStatus { return v.status ?? "in_stock"; }
 function isAvailable(v: Variant) { return variantStatus(v) === "in_stock"; }
 function isVisible(v: Variant)   { const s = variantStatus(v); return s !== "inactive"; }
+// Largest numeric size first ("250ml" before "120ml"); labels that aren't
+// numbers ("Small / Navy") keep the order WooCommerce returned them in.
+function bySizeDesc(a: Variant, b: Variant) {
+  const x = parseFloat(a.size ?? ""), y = parseFloat(b.size ?? "");
+  return isNaN(x) || isNaN(y) ? 0 : y - x;
+}
 type RelatedProduct = {
   id: string; title: string; slug: string; image: string | null;
   salePrice: number; variants: unknown[];
@@ -40,7 +46,7 @@ type Props = {
 // ── Related product mini-card
 function RelatedCard({ p, basePath }: { p: RelatedProduct; basePath: string }) {
   const allVariants = p.variants as Variant[];
-  const variants    = allVariants.filter(isVisible).sort((a, b) => parseFloat(b.size ?? "0") - parseFloat(a.size ?? "0"));
+  const variants    = allVariants.filter(isVisible).sort(bySizeDesc);
   const [selIdx,  setSelIdx]  = useState(() => defaultSelectableIdx(variants));
   const [qty,     setQty]     = useState(1);
   const [modal,   setModal]   = useState(false);
@@ -134,7 +140,7 @@ function RelatedCard({ p, basePath }: { p: RelatedProduct; basePath: string }) {
 // ── Main product detail client component
 export function ProductDetailClient({ product, related, basePath = "/sales/shop" }: Props & { basePath?: string }) {
   const allVariants = product.variants as Variant[];
-  const variants    = allVariants.filter(isVisible).sort((a, b) => parseFloat(b.size ?? "0") - parseFloat(a.size ?? "0"));
+  const variants    = allVariants.filter(isVisible).sort(bySizeDesc);
 
   const [activeImage, setActiveImage]   = useState(product.image ?? "");
   const [selectedIdx, setSelectedIdx]   = useState(() => defaultSelectableIdx(variants));

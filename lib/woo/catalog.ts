@@ -111,17 +111,39 @@ function variationStatus(v: WooVariation): VariantStatus {
   return v.stock_status === "outofstock" ? "out_of_stock" : "in_stock";
 }
 
-function mapVariation(v: WooVariation, defaultSize: string | undefined): ShopVariant {
-  const sizeAttr = v.attributes.find((a) => a.name.toLowerCase() === "size") ?? v.attributes[0];
-  const size = sizeAttr?.option ?? "";
+type AttrRef = { id: number; name: string };
+
+// Global attributes match by id; local (custom) attributes have id 0, so by name
+const sameAttr = (a: AttrRef, b: AttrRef) =>
+  a.id && b.id ? a.id === b.id : a.name.toLowerCase() === b.name.toLowerCase();
+
+// The label shown as the "size" chip: one value per variation attribute, in
+// the product's attribute order ("Small / Navy"). Woo leaves out an attribute
+// the variation accepts any value for, so that part reads "Any <attribute>".
+function variationLabel(p: WooProduct, v: WooVariation): string {
+  const variationAttrs = p.attributes.filter((a) => a.variation);
+  const parts = variationAttrs.length
+    ? variationAttrs.map((pa) => v.attributes.find((va) => sameAttr(va, pa))?.option || `Any ${pa.name}`)
+    : v.attributes.map((va) => va.option).filter(Boolean);
+  return parts.join(" / ") || SINGLE_SIZE_LABEL;
+}
+
+function isDefaultVariation(p: WooProduct, v: WooVariation): boolean {
+  if (!p.default_attributes.length) return false;
+  return p.default_attributes.every((d) =>
+    v.attributes.some((va) => sameAttr(va, d) && va.option === d.option),
+  );
+}
+
+function mapVariation(p: WooProduct, v: WooVariation): ShopVariant {
   return {
     variationId: v.id,
-    size,
+    size:        variationLabel(p, v),
     sku:         v.sku,
     salePrice:   toNumber(v.price),
     stock:       v.manage_stock === true && v.stock_quantity !== null ? v.stock_quantity : undefined,
     status:      variationStatus(v),
-    isDefault:   defaultSize !== undefined && defaultSize === size,
+    isDefault:   isDefaultVariation(p, v),
     image:       v.image?.src || undefined,
   };
 }
@@ -141,14 +163,12 @@ function simpleVariant(p: WooProduct): ShopVariant {
 async function getVariants(p: WooProduct, freshness: Freshness): Promise<ShopVariant[]> {
   if (p.type !== "variable") return [simpleVariant(p)];
   if (p.variations.length === 0) return [];
-  const defaultSize = p.default_attributes.find((a) => a.name.toLowerCase() === "size")?.option;
   const variations = await fetchAllPages<WooVariation>(
     `wc/v3/products/${p.id}/variations`, { status: "any" }, freshness,
   );
   return variations
     .sort((a, b) => a.menu_order - b.menu_order || a.id - b.id)
-    .map((v) => mapVariation(v, defaultSize))
-    .filter((v) => v.size);
+    .map((v) => mapVariation(p, v));
 }
 
 async function getCategoryParents(freshness: Freshness) {
