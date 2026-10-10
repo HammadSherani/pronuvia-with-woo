@@ -122,10 +122,12 @@ export function SalesRepForm({ action, submitLabel, backHref, successRedirect, i
             <FE msg={e.email?.[0]} />
           </div>
           <div>
-            <label className={lbl}>Login ID</label>
+            <label className={lbl}>Login ID{!isEdit && <Req />}</label>
             <input name="loginId" type="text" autoComplete="username" className={icls(e.loginId?.[0])} placeholder="e.g. john.smith" defaultValue={defaults?.loginId} />
             <FE msg={e.loginId?.[0]} />
-            <p className="text-[11px] text-gray-400 mt-1">Optional. Used to sign in (3–64 characters — letters, numbers, . _ - @ +; email addresses allowed)</p>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {isEdit ? "Leave as is to keep the current Login ID. " : ""}The rep can sign in with this or their email (3–64 characters — letters, numbers, . _ - @ +).
+            </p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4 mt-4">

@@ -5,7 +5,9 @@ export const CreateSalesRepSchema = z.object({
   firstName:         z.string().min(1, "First name is required").trim(),
   lastName:          z.string().min(1, "Last name is required").trim(),
   email:             z.string().email("Invalid email address").trim().toLowerCase(),
-  loginId:           LoginIdSchema.optional(),
+  // Required on create: an empty Login ID would collide with the MongoDB
+  // unique index (it treats every missing value as the same key)
+  loginId:           z.string().trim().min(1, "Login ID is required").pipe(LoginIdSchema),
   phone:             z.string().optional(),
   commission:        z.number().min(0, "Must be ≥ 0").max(100, "Must be ≤ 100").default(0),
   billingAddress:    z.string().optional(),

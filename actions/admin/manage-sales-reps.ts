@@ -24,7 +24,7 @@ function parseCreate(formData: FormData) {
     firstName:         (formData.get("firstName")         as string)?.trim() || "",
     lastName:          (formData.get("lastName")          as string)?.trim() || "",
     email:             (formData.get("email")             as string)?.trim() || "",
-    loginId:           (formData.get("loginId")             as string)?.trim() || undefined,
+    loginId:           (formData.get("loginId")             as string)?.trim() ?? "",
     phone:             (formData.get("phone")             as string) || undefined,
     commission:        Number(formData.get("commission") ?? 0),
     billingAddress:    (formData.get("billingAddress")    as string) || undefined,
