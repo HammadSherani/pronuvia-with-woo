@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
 import { requirePhysician } from "@/lib/auth/dal";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 const Schema = z.object({
   firstName:           z.string().min(1, "First name is required"),
@@ -101,6 +102,7 @@ export async function updatePhysicianProfile(
     },
   });
 
+  scheduleWooCustomerSync("PHYSICIAN", session.userId);
   return { success: true, message: "Profile updated successfully." };
 }
 

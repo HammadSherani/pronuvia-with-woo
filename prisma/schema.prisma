@@ -61,6 +61,9 @@ model SalesRepresentative {
   swiftCode             String?
   routingNumber         String?
   bankNotifyRequested   Boolean  @default(false)
+  // Linked WooCommerce customer (set by lib/woo/customers.ts). Not @unique:
+  // MongoDB unique indexes treat every missing value as a duplicate.
+  wooCustomerId         Int?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -176,6 +179,8 @@ model PartneringPhysician {
   routingNumber         String?
   bankNotifyRequested   Boolean        @default(false)
   walletBalance         Float          @default(0)
+  // Linked WooCommerce customer, created once the physician is APPROVED
+  wooCustomerId         Int?
   ordersCount         Int            @default(0)
   addedByRole         Role
   addedByAdminId      String?        @db.ObjectId

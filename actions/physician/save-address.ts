@@ -2,6 +2,7 @@
 
 import { requirePhysician } from "@/lib/auth/dal";
 import { prisma }           from "@/lib/db/prisma";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 export async function savePhysicianAddress(data: {
   address1: string; address2: string;
@@ -22,6 +23,7 @@ export async function savePhysicianAddress(data: {
         phone:      data.phone   || undefined,
       },
     });
+    scheduleWooCustomerSync("PHYSICIAN", session.userId);
     return { success: true };
   } catch {
     return { success: false, message: "Failed to save address." };

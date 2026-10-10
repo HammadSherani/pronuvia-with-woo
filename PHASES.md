@@ -6,7 +6,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | --- | --- | --- | --- |
 | 1 | Foundation + security | Low | Done (WP: dummy products + store address pending) |
 | 2 | Catalog (products, categories, stock) | Medium | Done (dummy products cleanup pending) |
-| 3 | Customers + structured addresses | Medium | Not started |
+| 3 | Customers + structured addresses | Medium | Done on branch `phase-3-customers` (UI test pending) |
 | 4 | Shipping rates → Woo zones | High | Not started |
 | 5 | Coupons + server-side totals | High | Not started |
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Not started |
@@ -119,31 +119,48 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 ## Phase 3: Customers + structured addresses
 
-**Goal:** Har Sales Rep aur Physician ek Woo customer se link ho. Address hamesha structured ho, string nahi.
+**Goal:** Har Sales Rep aur har APPROVED Physician ek Woo customer se link ho. Login Next.js mein hi rahega.
 
-**Steps**
+**Branch:** `phase-3-customers` (develop se), aap ke test ke baad merge hogi.
 
-1. Prisma: `SalesRepresentative.wooCustomerId`, `PartneringPhysician.wooCustomerId` (`Int? @unique`).
-2. Woo customer banana: admin rep create, admin physician create, rep "add physician", website registration (approval par), `getOrCreateWooCustomer()` lazy fallback.
-3. Profile / address / email update → Woo customer update. Delete → sirf unlink.
-4. Address: `components/shared/address-fields.tsx` ka JSON format har jagah standard. Purane string addresses ka one-time converter (jo parse na ho woh list admin ko).
-5. Email clash: pehle `GET /customers?email=`, mil jaye to link.
-6. Backfill script saare reps + physicians ke liye.
+**Steps (kya bana, 2026-10-08)**
+
+1. Prisma: `SalesRepresentative.wooCustomerId`, `PartneringPhysician.wooCustomerId` (`Int?`). `@unique` jaan-boojh kar nahi lagaya: MongoDB unique index khali values ko bhi duplicate ginta hai.
+2. `lib/addresses/normalize.ts`: teeno saved formats (checkout `AddressData` JSON, admin rep form `{line1…}` JSON, physician columns) ko ek structured address mein badalta hai. Country / state name ya code dono se ISO code. Purana free text → address line 1.
+3. `lib/woo/customers.ts`:
+    1. `syncWooCustomer`: link nahi → email se dhoondo (mile to link + claim), warna naya customer. Link hai → update. Woo mein customer delete ho gaya ho → dobara link / create. Kabhi throw nahi karta.
+    2. Physician sirf APPROVED par. PENDING / REJECTED → skip.
+    3. Same email (rep + physician): pehla user owner (`pronuvia_user_id` meta), doosra sirf link hota hai aur owner ka data overwrite nahi karta.
+    4. `scheduleWooCustomerSync` (response ke baad chalta hai), `getOrCreateWooCustomer` (checkout ke liye lazy, Phase 6), `syncAllWooCustomers` (backfill).
+4. Sync in jagahon se: admin rep create / edit, admin physician create / edit, physician approval, rep profile, physician profile, dono "save checkout address". Delete par Woo customer nahi hatta.
+5. Backfill: `POST /api/woo/sync-customers` (`?dryRun=1` = sirf report), sirf admin.
+6. Purane string addresses ka alag converter nahi banaya: naya DB khali hai, aur normalizer purane text ko bhi handle karta hai.
 
 **Testing**
 
-- [ ] Admin naya rep / physician → Woo customer bane, ID save
-- [ ] Rep "add physician" → Woo customer bane
-- [ ] Website registration → approve hone par customer bane (pending / rejected par nahi)
-- [ ] Pehle se maujood email → link, duplicate nahi
-- [ ] Rep aur physician ka same email → clash rule ke mutabiq
-- [ ] Woo down par rep create → rep bane, baad mein lazy link
-- [ ] Profile / address update → Woo mein bhi update
-- [ ] Backfill 2 baar → duplicates nahi
-- [ ] Address converter: JSON, "City, ST 12345", ghalat format → sahi report
-- [ ] Login (email + loginId), forgot / reset password → pehle jaise
+- [x] Dry run → kuch nahi likha, "would create"
+- [x] Rep, checkout JSON address → customer bana; billing aur shipping alag-alag sahi
+- [x] Rep, admin-form JSON address → billing + shipping dono mein
+- [x] Rep bina address → customer bana (naam / email)
+- [x] Approved physician → customer bana; "California" / "United States" → CA / US, practice → company
+- [x] Pending / Rejected physician → skip; pending → approved → customer bana
+- [x] Pehle se mojood Woo email → link + claim, duplicate nahi
+- [x] Rep + physician same email → physician "shared", rep ka data overwrite nahi hua
+- [x] Woo down → "failed", user par asar nahi; Woo wapas aane par lazy getOrCreate se link
+- [x] Address + email badla → Woo customer update
+- [x] Woo mein customer delete → sync par naya customer
+- [x] Dobara sync → "updated" / "shared", koi duplicate nahi
+- [x] Backfill route bina admin → 401; dry run asli users ko nahi chhedta
+- [ ] UI se: admin rep / physician create, approval, profile edit → Woo customer bane / update ho  _(sync logic test hua; server actions se browser mein aap test karenge)_
+- [ ] Login (email + loginId), forgot / reset password → pehle jaise  _(code nahi badla; browser test baqi)_
 
 **Done kab:** 100% active users ke paas `wooCustomerId` aur structured address ho.
+
+**Pending**
+
+- **WP developer:** WooCommerce → Settings → Emails → **"New account" email OFF** karein. Warna har naye rep / physician ko WooCommerce ka "account created" email (WordPress username ke saath) jayega.
+- **Aap:** test ke baad backfill ek baar chalayein (pehle `?dryRun=1`) taa'ke 2 mojood users bhi link ho jayein.
+- **Alag bug mila (fix baqi):** `loginId` ka unique index khali value ko bhi ginta hai, is liye sirf **ek** rep (aur ek physician) bina Login ID ke ban sakta hai. Doosre par "This Login ID is already in use." aata hai. Fix: DB mein partial unique index (aap ki ijazat se).
 
 ---
 

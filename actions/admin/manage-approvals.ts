@@ -8,6 +8,7 @@ import { ApprovalStatus } from "@/generated/prisma/enums";
 import { generateResetToken } from "@/lib/auth/reset-token";
 import { sendMail, WELCOME_EMAIL_FROM } from "@/lib/email/mailer";
 import { physicianApprovalEmail, salesRepDoctorApprovedEmail } from "@/lib/email/templates";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 const APPROVAL_ATTACHMENTS_DIR = path.join(process.cwd(), "lib/email/attachments/application-approval");
 const WELCOME_ATTACHMENTS_DIR  = path.join(process.cwd(), "lib/email/attachments/welcome-aboard");
@@ -73,6 +74,9 @@ export async function approvePhysician(id: string): Promise<ApprovalActionState>
       passwordResetExpiry: expiry,
     },
   });
+
+  // Approved physicians get a WooCommerce customer
+  scheduleWooCustomerSync("PHYSICIAN", id);
 
   // Email 1: Account approval with password setup link
   //

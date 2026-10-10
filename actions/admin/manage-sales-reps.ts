@@ -11,6 +11,7 @@ import { passwordSetupEmail } from "@/lib/email/templates";
 import { z } from "zod";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 export type SalesRepActionState = {
   errors?: Record<string, string[]>;
@@ -23,7 +24,7 @@ function parseCreate(formData: FormData) {
     firstName:         (formData.get("firstName")         as string)?.trim() || "",
     lastName:          (formData.get("lastName")          as string)?.trim() || "",
     email:             (formData.get("email")             as string)?.trim() || "",
-    loginId:           (formData.get("loginId")             as string)?.trim() || undefined,
+    loginId:           (formData.get("loginId")             as string)?.trim() ?? "",
     phone:             (formData.get("phone")             as string) || undefined,
     commission:        Number(formData.get("commission") ?? 0),
     billingAddress:    (formData.get("billingAddress")    as string) || undefined,
@@ -97,6 +98,8 @@ export async function createSalesRep(
     throw err;
   }
 
+  scheduleWooCustomerSync("SALES_REP", createdRepId);
+
   // Send password setup email
   const { subject, html } = passwordSetupEmail({
     firstName: data.firstName + " " +data.lastName,
@@ -155,6 +158,8 @@ export async function updateSalesRep(
     if (field === "email")   return { errors: { email: ["This email is already in use."] } };
     throw err;
   }
+
+  scheduleWooCustomerSync("SALES_REP", id);
 
   revalidatePath("/admin/sales-reps");
   revalidatePath(`/admin/sales-reps/${id}`);

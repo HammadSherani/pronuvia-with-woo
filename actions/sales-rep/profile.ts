@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma";
 import { requireSalesRep } from "@/lib/auth/dal";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { revalidatePath } from "next/cache";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 const ProfileSchema = z.object({
   firstName:       z.string().min(1, "First name is required"),
@@ -81,6 +82,7 @@ export async function updateSalesRepProfile(
       },
     });
 
+    scheduleWooCustomerSync("SALES_REP", session.userId);
     revalidatePath("/sales/account");
     return { success: true };
   } catch (err) {
