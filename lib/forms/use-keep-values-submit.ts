@@ -22,7 +22,10 @@ export function useKeepValuesSubmit(
       const cancelled = beforeSubmit?.(event) === false || event.defaultPrevented;
       event.preventDefault();
       if (cancelled) return;
-      const formData = new FormData(event.currentTarget);
+      // Pass the submitter so a clicked <button name=… value=…> is included,
+      // as it is in a native submission (e.g. "Approve" vs "Save as pending")
+      const submitter = (event.nativeEvent as SubmitEvent).submitter;
+      const formData = new FormData(event.currentTarget, submitter);
       startTransition(() => formAction(formData));
     },
     [formAction, beforeSubmit],
