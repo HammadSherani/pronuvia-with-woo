@@ -11,4 +11,5 @@ export const wpAdmin = {
   newProduct:  () => `${base()}/post-new.php?post_type=product`,
   editProduct: (wooId: string | number) => `${base()}/post.php?post=${wooId}&action=edit`,
   categories:  () => `${base()}/edit-tags.php?taxonomy=product_cat&post_type=product`,
+  shipping:    () => `${base()}/admin.php?page=wc-settings&tab=shipping`,
 };

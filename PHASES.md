@@ -6,8 +6,8 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | --- | --- | --- | --- |
 | 1 | Foundation + security | Low | Done (WP: dummy products + store address pending) |
 | 2 | Catalog (products, categories, stock) | Medium | Done (dummy products cleanup pending) |
-| 3 | Customers + structured addresses | Medium | Done on branch `phase-3-customers` (UI test pending) |
-| 4 | Shipping rates → Woo zones | High | Not started |
+| 3 | Customers + structured addresses | Medium | Done (merged into `develop`) |
+| 4 | Shipping rates → Woo zones | High | Done on branch `phase-4-shipping` (your test pending) |
 | 5 | Coupons + server-side totals | High | Not started |
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Not started |
 | 7 | Order management (admin + rep + physician) | High | Not started |
@@ -168,28 +168,33 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 **Goal:** Checkout ke shipping options `ShippingRate` table ki jagah Woo shipping zones se aayein.
 
-**Steps**
+**Kya mila:** Mongo ki `ShippingRate` table khali thi (0 rules), is liye migration script ki zaroorat nahi padi. Woo par zones pehle se bane hain: New York $5, Rest of US $9.99, Canada / Mexico $19.99, Rest of World $34.99. Rates ab sirf WP admin (WooCommerce → Settings → Shipping) se manage honge.
 
-1. Har `ShippingRate` rule → Woo zone: country-wide rule = country zone, state rules = state zone (upar order mein).
-2. Methods: FLAT → Flat rate, FREE → Free shipping, LOCAL_PICKUP → Local pickup, FEDEX_2DAY → "FedEx 2Day" naam ka Flat rate. `isActive` false → method disabled.
-3. One-time migration script + dry run. Iske baad rules WP admin se manage honge.
-4. `getShippingQuote(items, address)` server action: Woo Store API cart (`Cart-Token`), items + address → rates.
-5. Teeno checkouts `getShippingOptionsForCountry` ki jagah Woo rates use karein.
-6. Admin "Shipping Rates" page → WP zones par redirect.
+**Kya bana**
+
+1. `lib/woo/shipping.ts` → `quoteShipping(items, address)`: Woo Store API par guest cart (`Cart-Token`), items + address daal kar Woo ke rates wapas. Woo ka apna zone order lagta hai: pehla matching zone hi.
+2. State code milan: hamari address list aur Woo ke codes kuch mulkon mein alag hain (Berlin "BE" vs Woo "DE-BE"). Woo ki state list (1 din cache) se code milaya jata hai, na mile to state khali (country zone phir bhi lagta hai).
+3. Ghalat ZIP (jaise US mein "abc", ya Canada ke saath US ka zip) → "Please enter a valid ZIP / postal code", order block.
+4. `actions/checkout/shipping-quote.ts` → `getShippingQuote` (login zaroori). `lib/shipping/use-shipping-quote.ts` hook teeno checkouts mein: country / state / ZIP badalne par naya quote (ZIP par 400ms wait), purana jawab kabhi naye address par nahi lagta.
+5. Koi rate na ho, rates load ho rahe hon, ya error ho → Place Order band. Error par "Try again" button.
+6. Admin "Shipping Rates" → WP shipping settings par redirect. Purana code hata diya: `lib/shipping/calculate.ts`, `actions/admin/shipping-rates.ts`, `components/admin/shipping-rates-client.tsx`. Prisma model `ShippingRate` Phase 10 cleanup mein hatega.
+
+**Note:** Order par shipping ka naam Woo method ka title save hota hai ("New York", "Rest of US"). Label wala page "FedEx 2Day" naam dhoondta hai, is liye FedEx 2Day ka method WP mein isi naam se banayein. Cost abhi bhi client se server jaati hai; server par dobara hisaab Phase 5 mein.
 
 **Testing**
 
-- [ ] Har purana rule → Woo mein same country / state / method / cost
-- [ ] State rule wali state → state rate pehle, phir country-wide
-- [ ] Bina state rule ki state → sirf country-wide
-- [ ] Jis country ka koi rule nahi → "No shipping available", checkout block
-- [ ] Local Pickup → $0, address phir bhi save
-- [ ] FedEx 2Day → sahi cost aur naam order par save
-- [ ] Inactive rule → option na dikhe
-- [ ] US, Canada, ek international address → sahi options
-- [ ] Address badlein → options dobara load
-- [ ] Teeno checkouts (rep, physician, admin behalf) → same options
-- [ ] Woo slow / down → loading, phir saaf error
+- [x] ~~Har purana rule → Woo mein same~~ (purane rules the hi nahi)
+- [x] NY → New York $5, TX → Rest of US $9.99, Canada → $19.99, Germany → Rest of World $34.99 (teeno checkouts)
+- [x] Form order ke saath sahi cost + naam bhejta hai (rep, physician)
+- [x] Germany + Berlin (Woo code `DE-BE`) → rate aata hai
+- [x] Ghalat ZIP → saaf message, order block; sahi ZIP → rate wapas
+- [x] Jis address ka koi method nahi → "No shipping available", Place Order band
+- [x] Address badlein → options dobara load
+- [x] Ek item do baar cart mein → quote theek
+- [x] Woo down → "could not be loaded" + Try again, Place Order band
+- [x] Admin Shipping Rates → WP shipping settings
+- [ ] Local Pickup / Free shipping / FedEx 2Day → abhi Woo mein ye methods bane hi nahi; banayein to ek baar check karein
+- [ ] Aap ka apna test: teeno checkouts par ek baar address badal kar dekhein
 
 **Done kab:** Teeno checkouts ke rates 100% Woo se, purani table istemal mein nahi.
 

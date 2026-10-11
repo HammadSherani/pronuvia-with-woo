@@ -22,6 +22,9 @@ export type WooRequestOptions = {
   body?:      unknown;
   timeoutMs?: number;
   retries?:   number;             // only applied to GET requests
+  headers?:   Record<string, string>;
+  // Store API (wc/store/v1) calls act as a guest shopper: no API keys sent.
+  anonymous?: boolean;
   // Opt into the Next.js data cache (GET only). Omit for always-fresh data.
   cacheFor?:  { revalidate: number; tags: string[] };
 };
@@ -102,9 +105,10 @@ export async function wooFetch<T>(
       res = await fetch(url, {
         method,
         headers: {
-          Authorization: auth,
+          ...(!opts.anonymous && { Authorization: auth }),
           Accept:        "application/json",
           ...(opts.body !== undefined && { "Content-Type": "application/json" }),
+          ...opts.headers,
         },
         body:   opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
         signal: AbortSignal.timeout(timeoutMs),
