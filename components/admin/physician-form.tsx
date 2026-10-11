@@ -224,7 +224,7 @@ export function PhysicianForm({
             </div>
             <div>
               <label className={lbl}>Confirm Password<Req /></label>
-              <input type="password" autoComplete="new-password" className={icls(e.confirmPassword?.[0] || passwordError)}
+              <input name="confirmPassword" type="password" autoComplete="new-password" className={icls(e.confirmPassword?.[0] || passwordError)}
                 placeholder="Re-enter password" value={confirmPassword} onChange={(ev) => onConfirmPasswordChange(ev.target.value)} />
               {passwordError ? <p className="text-xs text-red-500 mt-1">{passwordError}</p> : <FE msg={e.confirmPassword?.[0]} />}
             </div>
