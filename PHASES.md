@@ -7,8 +7,8 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 1 | Foundation + security | Low | Done (WP: dummy products + store address pending) |
 | 2 | Catalog (products, categories, stock) | Medium | Done (dummy products cleanup pending) |
 | 3 | Customers + structured addresses | Medium | Done (merged into `develop`) |
-| 4 | Shipping rates → Woo zones | High | Done on branch `phase-4-shipping` (your test pending) |
-| 5 | Coupons + server-side totals | High | Done on branch `phase-5-coupons` (your test pending) |
+| 4 | Shipping rates → Woo zones | High | Done (merged into `develop`) |
+| 5 | Coupons + server-side totals | High | Done (merged into `develop`) |
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Not started |
 | 7 | Order management (admin + rep + physician) | High | Not started |
 | 8 | Fulfillment + shipping labels | High | Not started |
