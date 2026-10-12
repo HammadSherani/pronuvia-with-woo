@@ -99,7 +99,8 @@ export function CartProvider({ userId, cartKey, children }: { userId?: string; c
     try { localStorage.removeItem(storageKey); } catch {}
   }, [storageKey]);
 
-  const totalItems = items.reduce((s, i) => s + i.quantity, 0);
+  // Number of lines in the cart (3 products = 3), not the sum of quantities
+  const totalItems = items.length;
   const totalPrice = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
 
   return (

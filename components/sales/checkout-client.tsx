@@ -24,13 +24,11 @@ import { confirmCardOrder } from "@/actions/sales-rep/confirm-card-order";
 import { payWithWallet } from "@/actions/sales-rep/wallet-pay";
 import { saveCheckoutAddress } from "@/actions/sales-rep/save-address";
 import { validateCoupon }      from "@/actions/checkout/validate-coupon";
-import { getShippingOptionsForCountry } from "@/lib/shipping/calculate";
+import { useShippingQuote } from "@/lib/shipping/use-shipping-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
 import { formatCurrency } from "@/lib/utils/currency";
-
-type ShippingOption = { id: string; method: string; label: string; cost: number };
 
 // ── Address helpers ─────────────────────────────────────────────────────────
 
@@ -249,28 +247,14 @@ export function CheckoutClient({
   const [sameAsBilling, setSameAsBilling] = useState(true);
 
   // shipping options
-  const [shippingOptions,  setShippingOptions]  = useState<ShippingOption[]>([]);
-  const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
-  const [loadingShipping,  setLoadingShipping]  = useState(false);
-
-  useEffect(() => {
-    if (!shipping.country) {
-      setShippingOptions([]);
-      setSelectedShipping(null);
-      return;
-    }
-    setLoadingShipping(true);
-    getShippingOptionsForCountry(shipping.country, shipping.state || undefined)
-      .then((opts) => {
-        setShippingOptions(opts);
-        setSelectedShipping(opts.length > 0 ? opts[0] : null);
-      })
-      .catch(() => {
-        setShippingOptions([]);
-        setSelectedShipping(null);
-      })
-      .finally(() => setLoadingShipping(false));
-  }, [shipping.country, shipping.state]);
+  const {
+    options:     shippingOptions,
+    selected:    selectedShipping,
+    setSelected: setSelectedShipping,
+    loading:     loadingShipping,
+    error:       shippingError,
+    retry:       retryShipping,
+  } = useShippingQuote(items, shipping);
 
   // coupon
   const [couponInput,    setCouponInput]    = useState("");
@@ -394,8 +378,8 @@ export function CheckoutClient({
       toast.error("Please enter a shipping address.");
       return;
     }
-    if (shippingOptions.length > 0 && !selectedShipping) {
-      toast.error("Please select a shipping method.");
+    if (!selectedShipping) {
+      toast.error(loadingShipping ? "Shipping rates are still loading." : shippingOptions.length > 0 ? "Please select a shipping method." : "Shipping is not available for this address.");
       return;
     }
     if (payMethod === "CARD") {
@@ -410,7 +394,7 @@ export function CheckoutClient({
     walletPending  ||
     (payMethod === "WALLET" && !canWallet) ||
     !patientEmail.trim() ||
-    !hasAddr(shipping);
+    !hasAddr(shipping) || !selectedShipping;
 
   // empty cart
   if (items.length === 0) {
@@ -515,9 +499,16 @@ export function CheckoutClient({
                   <span className="w-4 h-4 border-2 border-gray-200 border-t-[#3DBFA4] rounded-full animate-spin" />
                   Loading shipping options…
                 </div>
+              ) : shippingError ? (
+                <div className="flex items-center justify-between gap-3 border border-red-200 bg-red-50 rounded px-4 py-3 text-sm text-red-700">
+                  <span>{shippingError}</span>
+                  <button type="button" onClick={retryShipping} className="shrink-0 font-semibold underline hover:no-underline">
+                    Try again
+                  </button>
+                </div>
               ) : shippingOptions.length === 0 ? (
                 <div className="border border-amber-200 bg-amber-50 rounded px-4 py-3 text-sm text-amber-700">
-                  No shipping options available for {shipping.countryName}. Please contact us.
+                  No shipping available to this address{shipping.countryName ? ` in ${shipping.countryName}` : ""}. Please contact us.
                 </div>
               ) : (
                 <div className="border border-gray-300 rounded divide-y divide-gray-100">

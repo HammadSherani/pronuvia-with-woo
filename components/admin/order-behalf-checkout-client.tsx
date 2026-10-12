@@ -12,13 +12,11 @@ import { stripePromise } from "@/lib/stripe/client";
 import { useCart } from "@/lib/cart/cart-context";
 import { confirmBehalfCardOrder } from "@/actions/admin/order-behalf";
 import { validateCoupon } from "@/actions/checkout/validate-coupon";
-import { getShippingOptionsForCountry } from "@/lib/shipping/calculate";
+import { useShippingQuote } from "@/lib/shipping/use-shipping-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
 import { formatCurrency } from "@/lib/utils/currency";
-
-type ShippingOption = { id: string; method: string; label: string; cost: number };
 
 function hasAddr(a: AddressData) {
   return !!(a.firstName || a.address1 || a.city);
@@ -198,28 +196,14 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
   const [sameAsBilling, setSameAsBilling] = useState(true);
 
   // Shipping options
-  const [shippingOptions,  setShippingOptions]  = useState<ShippingOption[]>([]);
-  const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
-  const [loadingShipping,  setLoadingShipping]  = useState(false);
-
-  useEffect(() => {
-    if (!shipping.country) {
-      setShippingOptions([]);
-      setSelectedShipping(null);
-      return;
-    }
-    setLoadingShipping(true);
-    getShippingOptionsForCountry(shipping.country, shipping.state || undefined)
-      .then((opts) => {
-        setShippingOptions(opts);
-        setSelectedShipping(opts.length > 0 ? opts[0] : null);
-      })
-      .catch(() => {
-        setShippingOptions([]);
-        setSelectedShipping(null);
-      })
-      .finally(() => setLoadingShipping(false));
-  }, [shipping.country, shipping.state]);
+  const {
+    options:     shippingOptions,
+    selected:    selectedShipping,
+    setSelected: setSelectedShipping,
+    loading:     loadingShipping,
+    error:       shippingError,
+    retry:       retryShipping,
+  } = useShippingQuote(items, shipping);
 
   const [notes,          setNotes]          = useState("");
   const [showNotes,      setShowNotes]      = useState(false);
@@ -301,8 +285,8 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
 
   const handlePlaceOrder = () => {
     if (!hasAddr(shipping)) { toast.error("Please enter a shipping address."); return; }
-    if (shippingOptions.length > 0 && !selectedShipping) {
-      toast.error("Please select a shipping method.");
+    if (!selectedShipping) {
+      toast.error(loadingShipping ? "Shipping rates are still loading." : shippingOptions.length > 0 ? "Please select a shipping method." : "Shipping is not available for this address.");
       return;
     }
     stripeRef.current?.submit();
@@ -384,9 +368,16 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
                   <span className="w-4 h-4 border-2 border-gray-200 border-t-[#3DBFA4] rounded-full animate-spin" />
                   Loading shipping options…
                 </div>
+              ) : shippingError ? (
+                <div className="flex items-center justify-between gap-3 border border-red-200 bg-red-50 rounded px-4 py-3 text-sm text-red-700">
+                  <span>{shippingError}</span>
+                  <button type="button" onClick={retryShipping} className="shrink-0 font-semibold underline hover:no-underline">
+                    Try again
+                  </button>
+                </div>
               ) : shippingOptions.length === 0 ? (
                 <div className="border border-amber-200 bg-amber-50 rounded px-4 py-3 text-sm text-amber-700">
-                  No shipping options configured for {shipping.countryName}.
+                  No shipping available to this address{shipping.countryName ? ` in ${shipping.countryName}` : ""}. Please contact us.
                 </div>
               ) : (
                 <div className="border border-gray-300 rounded divide-y divide-gray-100">
@@ -514,7 +505,7 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
           </div>
 
           <button type="button" onClick={handlePlaceOrder}
-            disabled={cardProcessing || !hasAddr(shipping)}
+            disabled={cardProcessing || !hasAddr(shipping) || !selectedShipping}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-bold rounded transition-colors">
             {cardProcessing ? (
               <span className="flex items-center justify-center gap-2">
