@@ -6,20 +6,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { requirePhysician } from "@/lib/auth/dal";
 import { estimatedDeliveryDate } from "@/lib/utils/shipping";
 import { generateOrderNumber } from "@/lib/orders/order-number";
-import { validateCartItemsAvailability } from "@/lib/orders/validate-items";
+import { priceOrder } from "@/lib/checkout/price-order";
 import { sendMail } from "@/lib/email/mailer";
 import { orderConfirmationEmail, newOrderNotificationEmail } from "@/lib/email/templates";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
-
-type CartItem = {
-  productId:   string;
-  title:       string;
-  variantSize: string;
-  sku:         string;
-  unitPrice:   number;
-  quantity:    number;
-  lineTotal:   number;
-};
 
 export type PhysicianWalletPayState = {
   success:      boolean;
@@ -33,29 +23,19 @@ export async function payWithPhysicianWallet(
 ): Promise<PhysicianWalletPayState> {
   const session = await requirePhysician();
 
-  const itemsRaw        = (formData.get("items")           as string) || "[]";
-  const shippingAddress = (formData.get("shippingAddress") as string) || undefined;
-  const billingAddress  = (formData.get("billingAddress")  as string) || undefined;
-  const shippingRate    = parseFloat((formData.get("shippingRate")    as string) || "0");
-  const shippingMethod  = (formData.get("shippingMethod")  as string) || undefined;
-  const total           = parseFloat((formData.get("total")           as string) || "0");
-  const notes           = (formData.get("notes")           as string) || undefined;
-  const couponCode      = (formData.get("couponCode")      as string) || undefined;
-  const couponId        = (formData.get("couponId")        as string) || undefined;
-  const discountAmount  = parseFloat((formData.get("discountAmount")  as string) || "0");
-  const customerEmail   = (formData.get("customerEmail")   as string) || undefined;
-  const customerPhone   = (formData.get("customerPhone")   as string) || undefined;
-
-  let items: CartItem[];
+  // The browser says what to buy; every amount comes from WooCommerce
+  let checkout: unknown;
   try {
-    items = JSON.parse(itemsRaw) as CartItem[];
+    checkout = JSON.parse((formData.get("checkout") as string) || "null");
   } catch {
     return { success: false, message: "Invalid cart data." };
   }
-  if (!items.length) return { success: false, message: "Cart is empty." };
-
-  const availability = await validateCartItemsAvailability(items);
-  if (!availability.valid) return { success: false, message: availability.message };
+  const priced = await priceOrder(checkout, "PHYSICIAN");
+  if (!priced.ok) return { success: false, message: priced.message };
+  const {
+    items, subtotal, total, discountAmount, couponCode, shippingRate, shippingMethod, taxAmount,
+    shippingAddress, billingAddress, notes, customerEmail, customerPhone,
+  } = priced.order;
 
   const physician = await prisma.partneringPhysician.findUnique({
     where:  { id: session.userId },
@@ -78,7 +58,6 @@ export async function payWithPhysicianWallet(
     };
   }
 
-  const subtotal                   = parseFloat(items.reduce((s, i) => s + i.lineTotal, 0).toFixed(2));
   const commissionBase             = parseFloat((subtotal - discountAmount).toFixed(2));
   const physicianCommissionRate    = physician.commission ?? 0;
   const physicianCommissionAmount  = parseFloat(((commissionBase * physicianCommissionRate) / 100).toFixed(2));
@@ -105,8 +84,8 @@ export async function payWithPhysicianWallet(
         subtotal,
         total,
         discountAmount: discountAmount || 0,
+        taxAmount,
         couponCode:     couponCode || undefined,
-        couponId:       couponId   || undefined,
         physicianCommissionRate,
         physicianCommissionAmount,
         salesRepCommissionRate,
@@ -142,15 +121,6 @@ export async function payWithPhysicianWallet(
       },
     }),
   ];
-
-  if (couponId) {
-    ops.push(
-      prisma.coupon.update({
-        where: { id: couponId },
-        data:  { usedCount: { increment: 1 } },
-      })
-    );
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await prisma.$transaction(ops as any);

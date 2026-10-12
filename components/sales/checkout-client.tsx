@@ -3,7 +3,6 @@
 import {
   useState,
   useEffect,
-  useTransition,
   useActionState,
   forwardRef,
   useImperativeHandle,
@@ -23,8 +22,7 @@ import { useCart } from "@/lib/cart/cart-context";
 import { confirmCardOrder } from "@/actions/sales-rep/confirm-card-order";
 import { payWithWallet } from "@/actions/sales-rep/wallet-pay";
 import { saveCheckoutAddress } from "@/actions/sales-rep/save-address";
-import { validateCoupon }      from "@/actions/checkout/validate-coupon";
-import { useShippingQuote } from "@/lib/shipping/use-shipping-quote";
+import { useCheckoutQuote, checkoutSubmission, type CheckoutPayload } from "@/lib/checkout/use-checkout-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
@@ -51,36 +49,28 @@ function addrToString(a: AddressData): string {
 
 // ── Stripe inner form (must live inside <Elements>) ─────────────────────────
 
-type AppliedCoupon = { couponId: string; code: string; discountAmount: number };
-
 type StripeHandle = { submit: () => void };
 type StripeFormProps = {
-  itemsJson:        string;
-  shippingAddress:  string;
-  billingAddress?:  string;
+  // What to buy; null until the server quote is ready
+  checkout:         CheckoutPayload | null;
   // The structured (not serialized) address used for billing — passed
   // straight to Stripe as payment_method_data.billing_details so the card
   // form's own address/country/ZIP fields (which we hide) match what the
   // customer actually picked in our own form, instead of Stripe's default.
   billingAddressData: AddressData;
-  notes:            string;
-  shippingRate:     number;
-  shippingMethod?:  string;
   total:            number;
-  couponId?:        string;
-  couponCode?:      string;
-  discountAmount?:  number;
   customerEmail?:   string;
-  customerPhone?:   string;
   onSuccess:        (orderNumber: string) => void;
   onProcessing:     (v: boolean) => void;
   onError:          (msg: string) => void;
   onStripeReady:    () => void;
+  // The server priced the order differently (prices or shipping changed)
+  onQuoteChanged:   () => void;
 };
 
 const StripeInnerForm = forwardRef<StripeHandle, StripeFormProps>(
   function StripeInnerForm(
-    { itemsJson, shippingAddress, billingAddress, billingAddressData, notes, shippingRate, shippingMethod, total, couponId, couponCode, discountAmount, customerEmail, customerPhone, onSuccess, onProcessing, onError, onStripeReady },
+    { checkout, billingAddressData, total, customerEmail, onSuccess, onProcessing, onError, onStripeReady, onQuoteChanged },
     ref
   ) {
     const stripe   = useStripe();
@@ -94,7 +84,7 @@ const StripeInnerForm = forwardRef<StripeHandle, StripeFormProps>(
     }, [elements, total]);
 
     const handlePay = async () => {
-      if (!stripe || !elements) return;
+      if (!stripe || !elements || !checkout) return;
       onProcessing(true);
       onError("");
 
@@ -106,16 +96,18 @@ const StripeInnerForm = forwardRef<StripeHandle, StripeFormProps>(
         return;
       }
 
-      // Step 2: create PaymentIntent server-side
+      // Step 2: the server prices the order in WooCommerce and creates a
+      // PaymentIntent for that total (never an amount from the browser)
       let clientSecret: string;
       try {
         const res  = await fetch("/api/checkout/create-payment-intent", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ amountInCents: Math.max(50, Math.round(total * 100)) }),
+          body:    JSON.stringify({ checkout }),
         });
         const data = await res.json();
-        if (!data.clientSecret) throw new Error("No client secret returned.");
+        if (data.code === "total_changed" || data.code === "rate_changed") onQuoteChanged();
+        if (!data.clientSecret) throw new Error(data.error || "Could not start payment. Try again.");
         clientSecret = data.clientSecret;
       } catch (err) {
         onError(err instanceof Error ? err.message : "Could not start payment. Try again.");
@@ -123,9 +115,8 @@ const StripeInnerForm = forwardRef<StripeHandle, StripeFormProps>(
         return;
       }
 
-      sessionStorage.setItem("sr_order", JSON.stringify({
-        itemsJson, shippingAddress, billingAddress, notes, shippingRate, shippingMethod, total, couponId, couponCode, discountAmount, customerEmail, customerPhone,
-      }));
+      // Lets the order be finished if the bank redirects back (3-D Secure)
+      sessionStorage.setItem("sr_order", "1");
 
       // Step 3: confirm with the real clientSecret — billing_details is passed
       // explicitly here (rather than left for Stripe's own, hidden address
@@ -165,12 +156,7 @@ const StripeInnerForm = forwardRef<StripeHandle, StripeFormProps>(
 
       if (paymentIntent?.status === "succeeded") {
         sessionStorage.removeItem("sr_order");
-        const result = await confirmCardOrder({
-          paymentIntentId: paymentIntent.id,
-          itemsJson, shippingAddress, billingAddress, notes, shippingRate, shippingMethod, total, couponId, couponCode, discountAmount,
-          customerEmail: customerEmail || undefined,
-          customerPhone: customerPhone || undefined,
-        });
+        const result = await confirmCardOrder({ paymentIntentId: paymentIntent.id });
         if (result.success && result.orderNumber) {
           onSuccess(result.orderNumber);
         } else {
@@ -246,7 +232,7 @@ export function CheckoutClient({
   });
   const [sameAsBilling, setSameAsBilling] = useState(true);
 
-  // shipping options
+  // shipping options, coupon and totals, all from WooCommerce
   const {
     options:     shippingOptions,
     selected:    selectedShipping,
@@ -254,13 +240,9 @@ export function CheckoutClient({
     loading:     loadingShipping,
     error:       shippingError,
     retry:       retryShipping,
-  } = useShippingQuote(items, shipping);
-
-  // coupon
+    totals, coupon: appliedCoupon, couponError, couponPending, applyCoupon, removeCoupon,
+  } = useCheckoutQuote(items, shipping);
   const [couponInput,    setCouponInput]    = useState("");
-  const [appliedCoupon,  setAppliedCoupon]  = useState<AppliedCoupon | null>(null);
-  const [couponError,    setCouponError]    = useState("");
-  const [couponPending,  startCoupon]       = useTransition();
 
   // payment
   const [payMethod,      setPayMethod]      = useState<"CARD" | "WALLET">("CARD");
@@ -273,12 +255,11 @@ export function CheckoutClient({
   const stripeRef    = useRef<StripeHandle>(null);
   const walletSubmit = useRef<HTMLButtonElement>(null);
 
-  const subtotal       = parseFloat(items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2));
-  const shippingCost   = selectedShipping?.cost ?? 0;
-  const discountAmount = appliedCoupon?.discountAmount ?? 0;
-  const total          = parseFloat(Math.max(0, subtotal - discountAmount + shippingCost).toFixed(2));
+  const subtotal       = totals?.subtotal ?? parseFloat(items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2));
+  const total          = totals?.total ?? 0;
   const cashback       = commission > 0 ? parseFloat((subtotal * commission / 100).toFixed(2)) : 0;
-  const canWallet      = walletBalance > 0 && walletBalance >= total && total > 0;
+  // While the total is being worked out, keep the wallet choice as it is
+  const canWallet      = walletBalance > 0 && (!totals || (walletBalance >= total && total > 0));
 
   // If the total changes (coupon, shipping) and wallet can no longer cover it, fall back to card
   useEffect(() => {
@@ -286,18 +267,22 @@ export function CheckoutClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canWallet]);
 
-  const itemsJson = JSON.stringify(items.map((i) => ({
-    productId:   i.productId,
-    title:       i.productTitle,
-    variantSize: i.variantSize,
-    sku:         i.variantSku,
-    variationId: i.variationId ?? null,
-    unitPrice:   i.unitPrice,
-    quantity:    i.quantity,
-    lineTotal:   parseFloat((i.unitPrice * i.quantity).toFixed(2)),
-  })));
   const shipStr = addrToString(shipping);
   const billStr = addrToString(sameAsBilling ? shipping : billing);
+
+  // What the server prices and places. The only amount is the total shown,
+  // so the server can refuse to charge anything different.
+  const checkout: CheckoutPayload | null = totals && selectedShipping ? checkoutSubmission({
+    items,
+    shippingAddress: shipStr,
+    billingAddress:  billStr,
+    shippingRateId:  selectedShipping.id,
+    couponCode:      appliedCoupon?.code ?? null,
+    notes,
+    customerEmail:   patientEmail,
+    customerPhone:   patientPhone,
+    expectedTotal:   totals.total,
+  }) : null;
 
 
   // Remember the address used for this order so the next checkout starts
@@ -318,6 +303,8 @@ export function CheckoutClient({
       router.push(`/sales/invoice/${walletState.orderNumber}`);
     } else if (walletState.message) {
       toast.error(walletState.message);
+      // Prices, shipping or the coupon may have changed: show the new totals
+      retryShipping();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletState, clearCart, router]);
@@ -335,19 +322,12 @@ export function CheckoutClient({
     const status = params.get("redirect_status");
     if (!piId || status !== "succeeded") return;
 
-    const saved = sessionStorage.getItem("sr_order");
-    if (!saved) return;
-    const data = JSON.parse(saved) as {
-      itemsJson: string; shippingAddress: string; notes: string;
-      shippingRate: number; shippingMethod?: string; total: number;
-      couponId?: string; couponCode?: string; discountAmount?: number;
-      customerEmail?: string; customerPhone?: string;
-    };
+    if (!sessionStorage.getItem("sr_order")) return;
     sessionStorage.removeItem("sr_order");
     window.history.replaceState({}, "", window.location.pathname);
 
     setCardProcessing(true);
-    confirmCardOrder({ paymentIntentId: piId, ...data }).then((r) => {
+    confirmCardOrder({ paymentIntentId: piId }).then((r) => {
       if (r.success && r.orderNumber) handleCardSuccess(r.orderNumber);
       else { setStripeError(r.message ?? "Order creation failed."); setCardProcessing(false); }
     });
@@ -355,17 +335,9 @@ export function CheckoutClient({
   }, []);
 
   const handleApplyCoupon = () => {
-    setCouponError("");
-    startCoupon(async () => {
-      const res = await validateCoupon(couponInput, "SALES_REP", subtotal);
-      if (res.valid) {
-        setAppliedCoupon({ couponId: res.couponId, code: res.code, discountAmount: res.discountAmount });
-        setCouponInput("");
-        toast.success(res.message);
-      } else {
-        setCouponError(res.message);
-      }
-    });
+    if (!couponInput.trim()) return;
+    applyCoupon(couponInput);
+    setCouponInput("");
   };
 
   // place order
@@ -382,6 +354,10 @@ export function CheckoutClient({
       toast.error(loadingShipping ? "Shipping rates are still loading." : shippingOptions.length > 0 ? "Please select a shipping method." : "Shipping is not available for this address.");
       return;
     }
+    if (!checkout) {
+      toast.error("The order total is still being calculated.");
+      return;
+    }
     if (payMethod === "CARD") {
       stripeRef.current?.submit();
     } else {
@@ -394,7 +370,7 @@ export function CheckoutClient({
     walletPending  ||
     (payMethod === "WALLET" && !canWallet) ||
     !patientEmail.trim() ||
-    !hasAddr(shipping) || !selectedShipping;
+    !hasAddr(shipping) || !selectedShipping || !checkout;
 
   // empty cart
   if (items.length === 0) {
@@ -586,23 +562,15 @@ export function CheckoutClient({
                         >
                           <StripeInnerForm
                             ref={stripeRef}
-                            itemsJson={itemsJson}
-                            shippingAddress={shipStr}
-                            billingAddress={billStr}
+                            checkout={checkout}
                             billingAddressData={sameAsBilling ? shipping : billing}
-                            notes={notes}
-                            shippingRate={shippingCost}
-                            shippingMethod={selectedShipping?.label}
                             total={total}
-                            couponId={appliedCoupon?.couponId}
-                            couponCode={appliedCoupon?.code}
-                            discountAmount={discountAmount}
                             customerEmail={patientEmail || undefined}
-                            customerPhone={patientPhone || undefined}
                             onSuccess={handleCardSuccess}
                             onProcessing={setCardProcessing}
                             onError={(msg) => { setStripeError(msg); if (msg) toast.error(msg); }}
                             onStripeReady={() => setPaymentReady(true)}
+                            onQuoteChanged={retryShipping}
                           />
                         </Elements>
                       </div>
@@ -667,18 +635,7 @@ export function CheckoutClient({
 
           {/* Hidden wallet form */}
           <form action={walletAction} className="hidden">
-            <input type="hidden" name="items"           value={itemsJson} />
-            <input type="hidden" name="shippingAddress" value={shipStr} />
-            <input type="hidden" name="billingAddress"  value={billStr} />
-            <input type="hidden" name="shippingRate"    value={shippingCost} />
-            <input type="hidden" name="shippingMethod"  value={selectedShipping?.label ?? ""} />
-            <input type="hidden" name="total"           value={total} />
-            <input type="hidden" name="notes"           value={notes} />
-            <input type="hidden" name="couponCode"      value={appliedCoupon?.code      ?? ""} />
-            <input type="hidden" name="couponId"        value={appliedCoupon?.couponId  ?? ""} />
-            <input type="hidden" name="discountAmount"  value={discountAmount} />
-            <input type="hidden" name="customerEmail"   value={patientEmail} />
-            <input type="hidden" name="customerPhone"   value={patientPhone} />
+            <input type="hidden" name="checkout" value={checkout ? JSON.stringify(checkout) : ""} />
             <button ref={walletSubmit} type="submit" aria-hidden="true" />
           </form>
 
@@ -759,10 +716,10 @@ export function CheckoutClient({
                     </svg>
                     <div>
                       <span className="text-xs font-bold text-emerald-700 font-mono">{appliedCoupon.code}</span>
-                      <span className="text-xs text-emerald-600 ml-1">— −{formatCurrency(appliedCoupon.discountAmount)}</span>
+                      <span className="text-xs text-emerald-600 ml-1">— −{formatCurrency(appliedCoupon.discount)}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => setAppliedCoupon(null)}
+                  <button type="button" onClick={removeCoupon}
                     className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0">
                     Remove
                   </button>
@@ -774,7 +731,7 @@ export function CheckoutClient({
                       type="text"
                       placeholder="Coupon code"
                       value={couponInput}
-                      onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponError(""); }}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
                       onKeyDown={(e) => e.key === "Enter" && handleApplyCoupon()}
                       className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 font-mono placeholder:font-sans placeholder:text-gray-400"
                     />
@@ -799,7 +756,13 @@ export function CheckoutClient({
               {appliedCoupon && (
                 <div className="flex justify-between text-emerald-600 font-medium">
                   <span>Coupon ({appliedCoupon.code})</span>
-                  <span>−{formatCurrency(appliedCoupon.discountAmount)}</span>
+                  <span>−{formatCurrency(appliedCoupon.discount)}</span>
+                </div>
+              )}
+              {!!totals?.tax && (
+                <div className="flex justify-between">
+                  <span>Tax</span>
+                  <span>{formatCurrency(totals.tax)}</span>
                 </div>
               )}
               {/* {walletBalance > 0 && (
@@ -831,7 +794,11 @@ export function CheckoutClient({
             <div className="px-4 py-4">
               <div className="flex justify-between text-base font-bold text-gray-900">
                 <span>Total</span>
-                <span>{formatCurrency(total)}</span>
+                {totals ? (
+                  <span>{formatCurrency(total)}</span>
+                ) : (
+                  <span className="text-gray-400 italic text-xs font-normal">Calculating…</span>
+                )}
               </div>
             </div>
           </div>
