@@ -8,7 +8,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 2 | Catalog (products, categories, stock) | Medium | Done (dummy products cleanup pending) |
 | 3 | Customers + structured addresses | Medium | Done (merged into `develop`) |
 | 4 | Shipping rates → Woo zones | High | Done on branch `phase-4-shipping` (your test pending) |
-| 5 | Coupons + server-side totals | High | Not started |
+| 5 | Coupons + server-side totals | High | Done on branch `phase-5-coupons` (your test pending) |
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Not started |
 | 7 | Order management (admin + rep + physician) | High | Not started |
 | 8 | Fulfillment + shipping labels | High | Not started |
@@ -204,27 +204,51 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 **Goal:** Coupons Woo mein hon, aur har total server par Woo calculate kare. Browser ki koi value trust nahi.
 
-**Steps**
+**Kya mila:** Mongo mein koi coupon nahi tha (0), aur Woo mein bhi nahi, is liye migration ki zaroorat nahi padi. Branch `phase-5-coupons` `phase-4-shipping` se nikli hai (Phase 4 abhi merge nahi hua tha).
 
-1. `Coupon` → Woo coupon: PERCENTAGE → percent, FIXED → fixed_cart, `minOrderAmount` → minimum_amount, `maxUses` → usage_limit, `usedCount` → usage_count, `expiresAt` → date_expires, `isActive` false → draft.
-2. `applicableTo` (ALL / SALES_REP / PHYSICIAN): coupon meta + Next.js server check (Woo mein roles nahi hain).
-3. `getCheckoutQuote(items, address, shippingRateId, couponCode)`: Woo Store API se subtotal, discount, shipping, tax, total. Quote ID / hash save.
-4. Teeno payment-intent routes (`create-payment-intent`, `physician-payment-intent`, `admin-behalf-payment-intent`) amount **server quote se** lein, client se nahi.
-5. Wallet payment ka balance check bhi isi quote ke total se.
-6. Admin coupons page → WP coupons par redirect (ya Woo-backed list).
+**Kya bana**
 
-**Testing**
+1. `lib/woo/store-cart.ts` → `priceWooCart`: Woo Store API ka guest cart: items, address, coupon, chuna hua shipping rate. Woo subtotal, discount, har shipping option ki qeemat + tax, aur item tax deta hai. (Phase 4 ka `lib/woo/shipping.ts` isi mein badal gaya.)
+2. `lib/woo/coupons.ts`: Woo jo check nahi kar sakta:
+   - **Kis ke liye:** coupon meta `pronuvia_applicable_to` = ALL / SALES_REP / PHYSICIAN. Meta na ho to ALL (WP admin mein bana coupon sab ke liye). Admin "on behalf" ka order physician ka hai, is liye physician coupons lagte hain.
+   - **Use limit:** Phase 6 tak Woo ka `usage_count` 0 rehta hai (order Woo mein nahi banta), is liye hamare orders se bhi gina jata hai (cancelled chhod kar). Dono mein jo zyada ho. Phase 6 ke baad bhi double nahi ginega.
+   - Amount, minimum spend, expiry Woo khud check karta hai.
+3. `lib/checkout/price-order.ts` → `priceOrder`: order ke waqt browser sirf items, address, shipping rate id, coupon code aur **dikhaya gaya total** bhejta hai. Server Woo se dobara hisaab karta hai. Total alag ho (WP mein price badla, ya kisi ne chhed-chhad ki) to order rukta hai: "The order total is now $X". Shipping option ab na mile ya coupon rad ho, to bhi order rukta hai.
+4. **Card:** teeno payment-intent routes amount khud nikalte hain, browser ka `amountInCents` ab nahi chalta. Quote `CheckoutQuote` (Mongo) mein save hota hai, aur Stripe PaymentIntent par us ka `quoteId` hota hai. Payment ke baad order isi quote se banta hai, aur quote mita diya jata hai. PaymentIntent ka amount aur quote ka total cent tak milaya jata hai.
+5. **Wallet:** balance check aur kati raqam dono server quote ke total se.
+6. Checkout pages: subtotal, coupon, tax (sirf jab ho) aur total Woo se. Shipping option badalne par dobara request nahi jati (har option ki qeemat quote mein hoti hai). Coupon rad ho to Woo ka message dikhta hai aur coupon hat jata hai.
+7. Admin Coupons page: wahi UI, data Woo mein (`actions/admin/coupons.ts`). Woo mein bhi WP admin → Marketing → Coupons se badal sakte hain. Coupon ka code edit nahi hota.
+8. Order par naya field `taxAmount` (Woo ka tax). Purana `validate-coupon` action, Mongo `usedCount` ka hisaab aur `couponId` hata diye. Prisma model `Coupon` Phase 10 cleanup mein hatega.
 
-- [ ] Har purana coupon → Woo mein same type / value / limits / expiry
-- [ ] 10% coupon, $200 cart → $20 discount
-- [ ] Fixed $25 coupon, $20 cart → total negative na ho
-- [ ] Min amount se kam cart → saaf error
-- [ ] Expired / inactive / limit khatam → error
-- [ ] Physician-only coupon rep ke checkout par → reject
-- [ ] Coupon + free shipping + state rate ek saath → sahi total
-- [ ] DevTools se price / shipping / total / Stripe amount badlein → server ignore kare
-- [ ] Quote ke baad WP mein price badle → payment se pehle naya quote
-- [ ] Teeno checkouts mein screen ka total = Stripe amount (cent tak)
+**Raaste mein mile masle (theek kiye)**
+
+- Woo REST `date_expires_gmt` ko likhte waqt nazar-andaz karta hai, aur `null` se expiry nahi hat'ti. Ab `date_expires` UTC (`…Z`) mein jata hai, aur `""` se expiry hat'ti hai.
+- Woo ki coupon list draft (band) coupons sirf `status=any` par dikhati hai, aur `?code=` draft ko kabhi nahi dhoondhta. Admin list ab `status=any` se aati hai, aur code `search` se exact milaya jata hai.
+- Woo ke messages mein `&#036;` jaise codes ab theek decode hote hain.
+
+**Note:**
+- Order khud abhi bhi Mongo mein banta hai; Woo order Phase 6 mein.
+- WP mein tax ON hai lekin koi tax rate nahi, is liye tax $0. Rate banayein to checkout aur total mein khud aayega, `taxAmount` mein save hoga; invoice / email mein tax ki line abhi nahi hai.
+- Card ka minimum Stripe $0.50 hai. Is se kam total (100% coupon + free shipping) sirf wallet se.
+- Woo ka "per customer limit" aur "allowed emails" abhi kaam nahi karte (guest cart mein customer email nahi jata).
+
+**Testing** (Stripe test mode, email band, sab test data aakhir mein saaf)
+
+- [x] ~~Har purana coupon → Woo mein same~~ (purane coupons the hi nahi)
+- [x] 10% coupon, $200 cart → $20 discount, total $185 (NY $5)
+- [x] Fixed $25 coupon, $5 cart → discount $5, total minus nahi ($5 sirf shipping)
+- [x] Min amount se kam cart → "The minimum spend for coupon … is $100.00"
+- [x] Expired / band (draft) / limit khatam / ghalat code → error, total waisa hi
+- [x] Physician-only coupon rep ke checkout par → rad; physician ke checkout par → lagta hai
+- [x] Coupon + free shipping + NY rate → "Free shipping" option; free → $4.50, NY → $9.50
+- [x] DevTools: purana `amountInCents`, total $1, price $0.01, banaya hua free shipping rate, physician coupon rep se → sab rad ya nazar-andaz; Stripe amount sahi
+- [x] Wallet form mein total $0.01 → rad, wallet nahi kata
+- [x] Quote ke baad WP mein price $5 → $6 → order rad, "total is now $11.00", summary naya total dikhata hai
+- [x] Teeno checkouts mein screen ka total = server total = Stripe amount (cent tak); card order quote se bana
+- [x] Wallet order + coupon → order par subtotal, discount, shipping, tax, total, coupon, Woo price + SKU, commission (subtotal − discount par), wallet theek se kata
+- [x] Admin Coupons: Woo coupons list, naya coupon (fixed, min, physicians only, expiry) Woo mein sahi
+- [ ] Admin Coupons: "Deactivate" button → Woo draft (C: drive bhar jane se UI test nahi chal saka)
+- [ ] Aap ka apna test: teeno checkouts par coupon laga kar ek order
 
 **Done kab:** Har total aur Stripe amount server quote se ho, coupons Woo mein.
 

@@ -6,20 +6,10 @@ import { Prisma } from "@/generated/prisma/client";
 import { requireSalesRep } from "@/lib/auth/dal";
 import { estimatedDeliveryDate } from "@/lib/utils/shipping";
 import { generateOrderNumber } from "@/lib/orders/order-number";
-import { validateCartItemsAvailability } from "@/lib/orders/validate-items";
+import { priceOrder } from "@/lib/checkout/price-order";
 import { sendMail } from "@/lib/email/mailer";
 import { orderConfirmationEmail, newOrderNotificationEmail } from "@/lib/email/templates";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
-
-type CartItem = {
-  productId:   string;
-  title:       string;
-  variantSize: string;
-  sku:         string;
-  unitPrice:   number;
-  quantity:    number;
-  lineTotal:   number;
-};
 
 export type WalletPayState = {
   success:     boolean;
@@ -33,29 +23,19 @@ export async function payWithWallet(
 ): Promise<WalletPayState> {
   const session = await requireSalesRep();
 
-  const itemsRaw        = (formData.get("items")           as string) || "[]";
-  const shippingAddress = (formData.get("shippingAddress") as string) || undefined;
-  const billingAddress  = (formData.get("billingAddress")  as string) || undefined;
-  const shippingRate    = parseFloat((formData.get("shippingRate")    as string) || "0");
-  const shippingMethod  = (formData.get("shippingMethod")  as string) || undefined;
-  const total           = parseFloat((formData.get("total")           as string) || "0");
-  const notes           = (formData.get("notes")           as string) || undefined;
-  const couponCode      = (formData.get("couponCode")      as string) || undefined;
-  const couponId        = (formData.get("couponId")        as string) || undefined;
-  const discountAmount  = parseFloat((formData.get("discountAmount")  as string) || "0");
-  const customerEmail   = (formData.get("customerEmail")   as string) || undefined;
-  const customerPhone   = (formData.get("customerPhone")   as string) || undefined;
-
-  let items: CartItem[];
+  // The browser says what to buy; every amount comes from WooCommerce
+  let checkout: unknown;
   try {
-    items = JSON.parse(itemsRaw) as CartItem[];
+    checkout = JSON.parse((formData.get("checkout") as string) || "null");
   } catch {
     return { success: false, message: "Invalid cart data." };
   }
-  if (!items.length) return { success: false, message: "Cart is empty." };
-
-  const availability = await validateCartItemsAvailability(items);
-  if (!availability.valid) return { success: false, message: availability.message };
+  const priced = await priceOrder(checkout, "SALES_REP");
+  if (!priced.ok) return { success: false, message: priced.message };
+  const {
+    items, subtotal, total, discountAmount, couponCode, shippingRate, shippingMethod, taxAmount,
+    shippingAddress, billingAddress, notes, customerEmail, customerPhone,
+  } = priced.order;
 
   const rep = await prisma.salesRepresentative.findUnique({
     where:  { id: session.userId },
@@ -70,7 +50,6 @@ export async function payWithWallet(
     };
   }
 
-  const subtotal         = parseFloat(items.reduce((s, i) => s + i.lineTotal, 0).toFixed(2));
   const commissionBase   = parseFloat((subtotal - discountAmount).toFixed(2));
   const commissionRate   = rep.commission;
   const commissionAmount = parseFloat(((commissionBase * commissionRate) / 100).toFixed(2));
@@ -89,8 +68,8 @@ export async function payWithWallet(
         subtotal,
         total,
         discountAmount: discountAmount || 0,
+        taxAmount,
         couponCode:     couponCode || undefined,
-        couponId:       couponId   || undefined,
         salesRepCommissionRate:    commissionRate,
         salesRepCommissionAmount:  commissionAmount,
         physicianCommissionRate:   0,
@@ -126,15 +105,6 @@ export async function payWithWallet(
       },
     }),
   ];
-
-  if (couponId) {
-    ops.push(
-      prisma.coupon.update({
-        where: { id: couponId },
-        data:  { usedCount: { increment: 1 } },
-      })
-    );
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await prisma.$transaction(ops as any);
@@ -177,7 +147,6 @@ export async function payWithWallet(
   // Internal notification to Pronuvia
   try {
     const orderedBy = [rep?.firstName, rep?.lastName].filter(Boolean).join(" ") || "Medical Rep";
-    const subtotal  = items.reduce((s, i) => s + i.lineTotal, 0);
     const { subject, html } = newOrderNotificationEmail({
       orderNumber,
       orderedBy,
