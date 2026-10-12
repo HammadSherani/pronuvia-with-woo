@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { sendNewOrderToWoo, SYNC } from "@/lib/orders/woo-sync";
 import { Prisma } from "@/generated/prisma/client";
 import { requirePhysician } from "@/lib/auth/dal";
 import { estimatedDeliveryDate } from "@/lib/utils/shipping";
@@ -33,7 +35,7 @@ export async function payWithPhysicianWallet(
   const priced = await priceOrder(checkout, "PHYSICIAN");
   if (!priced.ok) return { success: false, message: priced.message };
   const {
-    items, subtotal, total, discountAmount, couponCode, shippingRate, shippingMethod, taxAmount,
+    items, subtotal, total, discountAmount, couponCode, shippingRate, shippingMethod, shippingRateId, taxAmount,
     shippingAddress, billingAddress, notes, customerEmail, customerPhone,
   } = priced.order;
 
@@ -85,6 +87,8 @@ export async function payWithPhysicianWallet(
         total,
         discountAmount: discountAmount || 0,
         taxAmount,
+        shippingRateId,
+        wooSyncStatus: SYNC.PENDING,
         couponCode:     couponCode || undefined,
         physicianCommissionRate,
         physicianCommissionAmount,
@@ -123,7 +127,9 @@ export async function payWithPhysicianWallet(
   ];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await prisma.$transaction(ops as any);
+  const [created] = (await prisma.$transaction(ops as any)) as [{ id: string }];
+  // Then into WooCommerce, once the response is sent; a failure is retried
+  after(() => sendNewOrderToWoo(created.id));
 
   await syncPendingPayoutRequest(session.userId, "PHYSICIAN", newBalance);
 

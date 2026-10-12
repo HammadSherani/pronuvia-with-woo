@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { QuickOrderModal } from "@/components/sales/quick-order-modal";
 import { useCart } from "@/lib/cart/cart-context";
 import { formatCurrency } from "@/lib/utils/currency";
 
@@ -49,7 +49,8 @@ function RelatedCard({ p, basePath }: { p: RelatedProduct; basePath: string }) {
   const variants    = allVariants.filter(isVisible).sort(bySizeDesc);
   const [selIdx,  setSelIdx]  = useState(() => defaultSelectableIdx(variants));
   const [qty,     setQty]     = useState(1);
-  const [modal,   setModal]   = useState(false);
+  const { addItem, isReady } = useCart();
+  const router = useRouter();
 
   const sel = selIdx >= 0 ? variants[selIdx] : null;
   const prices = variants.length > 0 ? variants.map((v) => v.salePrice ?? p.salePrice) : [p.salePrice];
@@ -59,7 +60,20 @@ function RelatedCard({ p, basePath }: { p: RelatedProduct; basePath: string }) {
   function handleBuy() {
     if (variants.length > 0 && selIdx < 0) { toast.error("Please select a size first."); return; }
     if (sel && !isAvailable(sel)) { toast.error("This variant is not available for purchase."); return; }
-    setModal(true);
+    if (!isReady || displayPrice === null) return;
+    // Buy Now goes through the normal (paid) checkout
+    addItem({
+      productId:    p.id,
+      productTitle: p.title,
+      productSlug:  p.slug,
+      productImage: p.image,
+      variantSize:  sel?.size ?? "",
+      variantSku:   sel?.sku  ?? "",
+      variationId:  sel?.variationId ?? null,
+      unitPrice:    displayPrice,
+      quantity:     qty,
+    });
+    router.push(basePath.replace(/\/shop$/, "/checkout"));
   }
 
   return (
@@ -123,16 +137,6 @@ function RelatedCard({ p, basePath }: { p: RelatedProduct; basePath: string }) {
           </button>
         </div>
       </div>
-      {modal && (
-        <QuickOrderModal
-          product={{ id: p.id, title: p.title, salePrice: p.salePrice }}
-          variantSize={sel?.size ?? ""}
-          variantSku={sel?.sku ?? ""}
-          unitPrice={sel?.salePrice ?? p.salePrice}
-          qty={qty}
-          onClose={() => setModal(false)}
-        />
-      )}
     </>
   );
 }
@@ -146,7 +150,6 @@ export function ProductDetailClient({ product, related, basePath = "/sales/shop"
   const [selectedIdx, setSelectedIdx]   = useState(() => defaultSelectableIdx(variants));
   const [qty,         setQty]           = useState(1);
   const [activeTab,   setActiveTab]     = useState<"info" | "reviews">("info");
-  const [showModal,   setShowModal]     = useState(false);
   const [justAdded,   setJustAdded]     = useState(false);
   const { addItem, isReady } = useCart();
 
@@ -388,18 +391,6 @@ export function ProductDetailClient({ product, related, basePath = "/sales/shop"
             ))}
           </div>
         </div>
-      )}
-
-      {/* Quick order modal */}
-      {showModal && (
-        <QuickOrderModal
-          product={{ id: product.id, title: product.title, salePrice: product.salePrice }}
-          variantSize={selectedVariant?.size ?? ""}
-          variantSku={selectedVariant?.sku ?? ""}
-          unitPrice={displayPrice}
-          qty={qty}
-          onClose={() => setShowModal(false)}
-        />
       )}
     </>
   );

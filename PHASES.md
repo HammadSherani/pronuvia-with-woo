@@ -9,7 +9,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 3 | Customers + structured addresses | Medium | Done (merged into `develop`) |
 | 4 | Shipping rates → Woo zones | High | Done (merged into `develop`) |
 | 5 | Coupons + server-side totals | High | Done (merged into `develop`) |
-| 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Not started |
+| 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done on branch `phase-6-orders` (your test + email decision pending) |
 | 7 | Order management (admin + rep + physician) | High | Not started |
 | 8 | Fulfillment + shipping labels | High | Not started |
 | 9 | Refunds, returns, webhooks + commission sync | Highest | Not started |
@@ -258,37 +258,51 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 
 **Goal:** Teeno checkouts (rep, physician, admin behalf) aur dono payments (Card, Wallet) ke baad order WooCommerce mein bane. Commission Next.js mein snapshot ho.
 
-**Steps**
+**Kya bana**
 
-1. Card: Stripe verify → quote verify → Woo order: `customer_id`, `line_items` (variation ids), `shipping_lines`, `coupon_lines`, `set_paid: true`, `transaction_id`.
-2. `meta_data`: `salesRepId`, `physicianId`, commission rates/amounts, `placedByAdmin`, `placedBySalesRep`, `stripePaymentIntentId`, customer email / phone.
-3. Wallet: quote total → balance check → Woo order → wallet debit + `WalletTransaction`. Order fail = koi debit nahi.
-4. Mongo `Order` patla record ban jaye: `wooOrderId`, order number, commission snapshot, `commissionPaid`, clawbacks. Monthly sweep isi par chalta rahe.
-5. Order number: Woo order id ya Sequential Order Numbers plugin. 13000 wali sequence jaari rahe.
-6. Idempotency: ek PaymentIntent = ek order (Mongo unique + pehle check). Payment ho gayi lekin Woo fail → `PENDING_SYNC` + retry + admin alert.
-7. Stock **order par** kam ho (Woo khud karta hai), label par nahi.
-8. Emails: order confirmation + internal notification ek hi jagah se (Next.js ya Woo), duplicate nahi.
-9. `createOrderBySalesRep` / `createOrderFromCart` (bina payment) → hatayein ya naye flow par.
+1. **Tarteeb (card aur wallet dono):** payment ke baad order pehle hamare database mein banta hai (wallet ho to debit + transaction, ek hi transaction mein), `wooSyncStatus = PENDING_SYNC`. Response ke foran baad (`after()`) Woo order banta hai → `SYNCED` + `wooOrderId`. Is tarah bina order ke kabhi paisa nahi kat'ta, aur Woo band ho to bhi customer ka order mehfooz rehta hai.
+   - Plan mein wallet ke liye "pehle Woo order, phir debit" tha; dono ka ek hi raasta behtar raha: Woo band hone par wallet order bhi ruk'ta nahi, baad mein Woo mein chala jata hai.
+2. `lib/woo/orders.ts` → Woo order: `set_paid` (status processing, Woo stock kam karta hai, coupon usage ginta hai), `customer_id` (physician ke order par physician, rep ke order par rep; link na ho to us waqt link / bana deta hai), line items (variation id, wohi price jo charge hui), shipping line (rate id + naam + cost), coupon line, addresses, customer note, payment method `pronuvia_stripe` / `pronuvia_wallet` + transaction id.
+3. Woo order meta: `pronuvia_order_number`, `pronuvia_order_id`, rep / physician id, `pronuvia_placed_by_admin`, commission rates + amounts, Stripe PaymentIntent, patient email / phone.
+4. `lib/orders/woo-sync.ts`:
+   - **Ek hi baar:** bhejne se pehle order "claim" hota hai (`SYNCING`), do sender ek order do baar nahi bana sakte.
+   - **Jawab gum ho jaye:** retry se pehle Woo mein order number se dhoondha jata hai; mil jaye to wahi link hota hai, naya nahi banta.
+   - **Woo band:** order `PENDING_SYNC` + error + koshishon ki ginti; pehli nakami par `sales1.pronuvia@gmail.com` ko alert (har koshish par nahi).
+   - **Coupon payment ke baad rad** (maslan limit beech mein khatam): order phir bhi banta hai, discount ek fee line ("Discount (coupon X)") ki tarah, total wahi; order note + alert.
+   - **Total alag** (Woo ka hisaab ≠ charge hui raqam): order note + alert.
+5. Retry: `/api/cron/woo-order-sync` (`CRON_SECRET`), Vercel cron rozana (Hobby plan din mein ek baar). Saath mein har naya order bhejne ke baad 5 tak atke hue orders bhi dobara try hote hain.
+6. Card confirm ek saath do baar (double click / 3-D Secure wapsi): quote sirf ek baar istemal hota hai, doosra pehle wala order lauta deta hai.
+7. **"Buy Now"** (related products card) ab cart mein dal kar checkout par le jata hai. Bina payment, browser ki price se order banane wala `createOrderBySalesRep` / `createOrderFromCart` aur us ke 2 components hata diye.
+8. Mongo `Order` abhi poora record hai (order screens Phase 7 tak isi se chalti hain) + `wooOrderId`, `wooSyncStatus`, `wooSyncError`, `wooSyncAttempts`, `wooSyncAt`, `shippingRateId`. Patla record Phase 7 / 10 mein.
 
-**Testing**
+**Order number:** 13000 wali sequence Next.js mein jaari hai; Woo order par meta `pronuvia_order_number`. WP admin mein Woo apna id dikhata hai (#124); wahan bhi hamara number chahiye to "Sequential Order Numbers" jaisa plugin ya chhota snippet (`woocommerce_order_number` filter).
 
-- [ ] Rep, card 4242 → Woo order paid, meta sahi, Mongo record, rep commission sahi
-- [ ] Physician, card → physician % + upline rep % dono sahi
-- [ ] Admin behalf, card → `placedByAdmin`, physician ke naam par order
-- [ ] Rep wallet / physician wallet → order + debit + transaction entry
-- [ ] Wallet balance kam → error, koi debit nahi
-- [ ] Decline card (4000…0002) → koi order nahi
-- [ ] 3D Secure card (4000…3155) → auth ke baad hi order
-- [ ] Refresh / double click → sirf ek order
-- [ ] Paid, Woo down → PENDING_SYNC, retry se order bane, admin alert
-- [ ] Order ke baad Woo stock kam
-- [ ] Coupon use → Woo coupon usage +1
-- [ ] Discount ke baad commission base sahi (subtotal − discount)
-- [ ] Commission rate baad mein badle → purane order ka snapshot same
-- [ ] Ek order par ek hi confirmation email + ek internal email
-- [ ] Stripe amount = Woo total = Mongo total
+**Emails (aap ka faisla chahiye):** Order emails Next.js se jati hain (patient ko confirmation, `sales1` ko internal). Woo bhi apni bhejta hai:
+- "Processing order" / "Completed order" → order ke billing email par. Woo billing email customer account (rep / physician) se khud bhar deta hai, is liye **rep / physician ko Woo ki receipt bhi jayegi** (hamari email mein unhein bcc pehle se jata hai).
+- "New order" → WP admin email par (hamari internal email ke ilawa).
+Mashwara: WP admin → WooCommerce → Settings → Emails mein "New order", "Processing order" aur "Completed order" band karein. Tests ke dauran "New order" kuch der band kar ke wapas ON kar diya tha.
 
-**Done kab:** Saare 6 raaste (3 checkouts × Card / Wallet) end-to-end chalein, koi duplicate ya bina order ka charge nahi.
+**Testing** (Stripe test mode, email band, sab test data aakhir mein saaf)
+
+- [x] Rep, card → Woo order paid (Stripe, transaction id = PaymentIntent), meta sahi, Mongo record, Stripe = Woo = Mongo = screen ($19.99)
+- [x] Physician, card + coupon → $18.99 sab jagah; physician 5% + upline rep 3% commission
+- [x] Admin behalf, card → `placed_by_admin`, physician Woo customer, $14.99 sab jagah
+- [x] Rep wallet + coupon / physician wallet → Woo order (Wallet), debit + transaction entry
+- [x] Wallet balance kam → wallet option nahi dikhta; zabardasti submit → "Insufficient wallet balance", koi order / debit nahi
+- [x] Decline card → koi order nahi (jaali "succeeded" wapsi ke saath bhi)
+- [x] 3-D Secure poora na ho → koi order nahi (Stripe `requires_action`); order sirf `succeeded` par
+- [x] Ek payment ka confirm do tab mein ek saath → ek hi order (Mongo + Woo)
+- [x] Woo band → `PENDING_SYNC`, ek alert, retry se Woo order bana; jawab gum hone par retry → duplicate nahi
+- [x] Order ke baad Woo stock kam (11 units → 200 se 189)
+- [x] Coupon use → Woo coupon usage +1; limit beech mein khatam → fee line, total same, alert
+- [x] Discount ke baad commission base (subtotal − discount): 10% of $18 = $1.80, Woo meta mein bhi
+- [x] Commission rate baad mein badle → purane order ka snapshot same
+- [x] Ek order par ek confirmation + ek internal email (Next.js ki taraf se; Woo wali upar "Emails" dekhein)
+- [x] Cron route: bina secret 401, secret ke saath chalta hai
+- [ ] Aap ka apna test: teeno checkouts se ek-ek order, phir WP admin → Orders mein dekhein
+- [ ] Emails ka faisla (upar)
+
+**Done kab:** Saare raaste (3 checkouts × Card / Wallet; admin behalf sirf Card) end-to-end chalein, koi duplicate ya bina order ka charge nahi.
 
 ---
 

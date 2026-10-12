@@ -258,6 +258,18 @@ model Order {
   // Tax WooCommerce charged (items + shipping); null on orders before Phase 5
   taxAmount                 Float?
 
+  // The WooCommerce order this order was sent to (Phase 6). Orders are saved
+  // here first (with any wallet debit), then created in Woo:
+  // PENDING_SYNC → SYNCING → SYNCED. A failed send goes back to PENDING_SYNC
+  // and is retried by /api/cron/woo-order-sync. Null on orders before Phase 6.
+  wooOrderId                Int?
+  wooSyncStatus             String?
+  wooSyncError              String?
+  wooSyncAttempts           Int?
+  wooSyncAt                 DateTime?
+  // Woo rate id of the shipping option, e.g. "flat_rate:9"
+  shippingRateId            String?
+
   customerEmail             String?
   customerPhone             String?
 

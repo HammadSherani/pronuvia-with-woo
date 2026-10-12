@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/manual-sweep?period=2026-09",
       "schedule": "1 4 10 9 *"
+    },
+    {
+      "path": "/api/cron/woo-order-sync",
+      "schedule": "30 6 * * *"
     }
   ]
 }
