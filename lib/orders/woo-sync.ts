@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { sendMail } from "@/lib/email/mailer";
 import { WooError } from "@/lib/woo/client";
 import { getOrCreateWooCustomer } from "@/lib/woo/customers";
-import { addOrderNote, createWooOrder, findWooOrder, updateWooOrder, type WooOrderAddress } from "@/lib/woo/orders";
+import { addOrderNote, createWooOrder, findWooOrder, ORDER_ID_KEY, updateWooOrder, type WooOrderAddress } from "@/lib/woo/orders";
 import { STATUS_META_KEY, toWooStatus } from "./woo-status";
 
 // Every paid order is saved in our database first (with the wallet debit, if
@@ -61,7 +61,7 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
 
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
   try {
-    let woo = await findWooOrder(order.orderNumber, order.createdAt);
+    let woo = await findWooOrder(order.id, order.createdAt);
     let couponFallback = false;
 
     if (!woo) {
@@ -94,7 +94,7 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
         },
         note: order.notes,
         meta: {
-          pronuvia_order_id:                    order.id,
+          [ORDER_ID_KEY]:                       order.id,
           [STATUS_META_KEY]:                    order.status,
           pronuvia_tracking_number:             order.trackingNumber,
           pronuvia_shipping_carrier:            order.shippingCarrier,

@@ -13,7 +13,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 7 | Order management (admin + rep + physician) | High | Done (merged into `develop`) |
 | 8 | Fulfillment + shipping labels | High | Done (merged into `develop`; WP setup + first real label pending) |
 | 9 | Refunds, returns, webhooks + commission sync | Highest | Done (merged into `develop`) |
-| 10 | Reports, purana data, cleanup + go-live | High | Not started |
+| 10 | Reports, purana data, cleanup + go-live | High | Code done on branch `phase-10-go-live`; go-live steps pending (`GO-LIVE.md`) |
 
 ## Kaam ka rule
 
@@ -470,25 +470,39 @@ Mashwara: WP admin → WooCommerce → Settings → Emails mein "New order", "Pr
 
 **Goal:** Dashboards aur reports sahi hon, purana code hate, aur live launch.
 
-**Steps**
+**Kya hua (code)**
 
-1. Admin dashboard, reports (overall sales, by product, returns, rep / doctor commission, customer history) → Woo orders + Mongo commission data.
-2. Purane Mongo orders: (a) read-only history rakhein, ya (b) Woo mein import karein (`_pronuvia_legacy` meta). Faisla reports ki zarurat dekh kar.
-3. Cleanup: `Product`, `Category`, `SubCategory`, `ShippingRate`, `Coupon`, `Shipment` models + admin pages + `lib/shipping/*` + test routes hata dein (backup ke baad).
-4. Vercel env: live Woo keys, live Stripe, webhook secret, crons check.
-5. Go-live checklist: final catalog sync, order placement thodi der freeze, webhooks live URL par, rollback plan (purana deploy ready), monitoring (webhook failures, PENDING_SYNC, label errors).
+1. **Reports / dashboard:** hamare `Order` record se chalte hain (Phase 7 ke baad Woo ka mirror, commission bhi isi mein); products ki list Woo se (Phase 2). Dobara likhne ki zaroorat nahi padi.
+2. **Milan (reconcile):** `GET /api/woo/reconcile?days=30` (admin), `lib/orders/reconcile.ts`. Har synced order ka total, status aur lautaya paisa Woo se milata hai; Woo tak na pahunche orders aur Woo webhooks ka haal batata hai. Staging par aap ke teeno orders (13001–13003) bilkul match.
+3. **Webhook setup:** `POST /api/woo/setup-webhooks` (admin): Order updated + Product updated / created / deleted webhooks `NEXT_PUBLIC_APP_URL/api/woo/webhooks` par `WOO_WEBHOOK_SECRET` ke saath bana / theek karta hai (dobara chalana mehfooz). Localhost par mana karta hai (Woo pahunch nahi sakta).
+4. **Purane orders:** Phase 6 se pehle sirf 13000; read-only rehta hai (Woo link ke bina). Import nahi.
+5. **Safai:** mardah `actions/admin/{products,categories,sub-categories}.ts` aur unke purane forms; Prisma models `Product`, `Category`, `SubCategory`, `ShippingRate`, `Coupon` (DB ke collections waise hi, code nahi chhoota). `Shipment` rehta hai (purane labels). `lib/shipping/*` Phase 8 mein hat chuka.
+6. **Regression ne 1 asli bug pakda, theek kiya:** order number "aakhri + 1" se banta tha, to sab se naya order delete hone par number **dobara** mil jata, aur Woo mein bheje gaye order ko number se dhoondhne wala check naye order ko **purane Woo order** se jod deta (staging par $23 ka order $185 wale se juda). Ab:
+   - order number ek **atomic counter** (`Counter` collection) se, kabhi dobara nahi; pehli dafa sab se bade maujooda number ke baad se
+   - Woo mein order **`pronuvia_order_id`** (hamari id, kabhi dobara nahi) se dhoondha jata hai
+   - `order-number.ts` se `"use server"` hata (browser se bulaya ja sakta tha)
+7. **`GO-LIVE.md`:** live ka tarteeb-waar runbook: zaroori code kaam, WP setup, Vercel env, DB indexes / backup, cutover, rollback, monitoring.
 
-**Testing**
+**Staging par mili cheez:** Woo mein pehle se ek "product update" webhook hai jis ka delivery URL **khaali** hai; go-live par hata dein.
 
-- [ ] Dashboard ke numbers vs Woo Analytics vs purane reports (ek test mahina) → match
-- [ ] Har report ka ek manual cross-check
-- [ ] Purana order (migration se pehle) → invoice / detail khule
-- [ ] Full E2E rep: login → shop → cart → coupon → shipping → card → label → complete → sweep → withdrawal
-- [ ] Full E2E physician: wohi wallet ke saath
-- [ ] Full E2E admin behalf + refund
-- [ ] Website registration → approval → welcome email → login → pehla order
-- [ ] Cleanup ke baad build + saare pages bina error
-- [ ] Live par pehla chhota real order → Stripe, Woo, Mongo teeno match
-- [ ] Pehle 48 ghante monitoring: koi PENDING_SYNC / webhook failure nahi
+**Testing (poori regression, ek build par; email band, test data saaf)**
+
+| Suite | Nateeja |
+| --- | --- |
+| Phase 4 shipping | 38/38 (test ko Phase 5 ke `checkout` payload par update kiya) |
+| Phase 5 coupons / totals | 42/42 (poori run); fix ke baad 35 par browser timeout, code nahi badla |
+| Phase 6 Woo orders | 27/27 (fix ke baad; pehle number ke takrao se 18 fail) |
+| Phase 7 order screens | 19–20/20 (ek page-load timing flake) |
+| Phase 8 labels | 17/17 |
+| Phase 9 refunds UI | 7/7 |
+| Server-level 6 / 7 / 9 | 24/24, 17/17, 19/19 |
+
+- [x] Purane models hatane ke baad build + type-check
+- [x] Reconcile: staging orders Woo se match
+- [ ] Dashboard ke numbers vs Woo Analytics (ek asli mahina; staging par data bahut kam)
+- [ ] Full E2E haath se: rep, physician (wallet), admin behalf + refund, registration → approval → pehla order
+- [ ] `GO-LIVE.md` ke saare qadam (zaroori code kaam: refunds har jagah ek jaise; WP setup; Vercel env; indexes; cutover; monitoring)
+- [ ] Live par pehla chhota asli order: Stripe, Woo, Mongo teeno match
+- [ ] Pehle 48 ghante: `/api/woo/reconcile` saaf, koi `PENDING_SYNC` / webhook failure nahi
 
 **Done kab:** Staging par saare E2E pass, live cutover, 48 ghante saaf monitoring.
