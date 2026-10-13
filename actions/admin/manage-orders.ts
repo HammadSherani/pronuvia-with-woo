@@ -11,6 +11,7 @@ import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { applyStatusLocally, pushOrderToWoo, refreshOrderFromWoo, META } from "@/lib/orders/order-woo";
 import { STATUS_META_KEY } from "@/lib/orders/woo-status";
 import { trashWooOrder, updateWooOrders } from "@/lib/woo/orders";
+import { sendTrackingEmail } from "@/lib/orders/tracking-email";
 
 const wooFailed = (e: unknown) =>
   `WooCommerce did not accept the change: ${e instanceof Error ? e.message : String(e)}`;
@@ -90,41 +91,9 @@ export async function shipOrder(
   revalidatePath("/sales/orders");
   revalidatePath("/physician/orders");
 
-  // Send tracking email
-  const trackingNum = payload.trackingNumber.trim();
-  if (trackingNum) {
+  if (trackingNumber) {
     try {
-      const { shipmentTrackingEmail } = await import("@/lib/email/templates");
-      type RawItem = { title?: string; variantSize?: string; quantity?: number; lineTotal?: number };
-      const items = (order.items as RawItem[]).map(i => ({
-        title:       i.title       ?? "Product",
-        variantSize: i.variantSize ?? null,
-        quantity:    i.quantity    ?? 1,
-        lineTotal:   i.lineTotal   ?? 0,
-      }));
-      const { subject, html } = shipmentTrackingEmail({
-        orderNumber:      order.orderNumber,
-        trackingNumber:   trackingNum,
-        shippingCarrier:  payload.carrier || null,
-        estimatedDelivery,
-        items,
-        shippingAddress:  order.shippingAddress,
-        billingAddress:   order.billingAddress,
-        total:            order.total,
-        shippingCost:     order.shippingRate ?? 0,
-        couponCode:       order.couponCode   ?? null,
-        discountAmount:   order.discountAmount ?? 0,
-        paymentMethod:    order.paymentMethod,
-        contactEmail:     order.customerEmail ?? null,
-        contactPhone:     order.customerPhone ?? null,
-      });
-
-      const to = order.customerEmail ?? order.physician?.email ?? "";
-      const toIsPatient = !!order.customerEmail;
-      const cc  = [toIsPatient ? null : order.physician?.email, toIsPatient ? null : order.salesRep?.email, "sales1.pronuvia@gmail.com"].filter(Boolean) as string[];
-      const bcc = toIsPatient && order.physician?.email ? [order.physician.email] : [];
-
-      if (to) await sendMail({ to, cc, bcc: bcc.length ? bcc : undefined, subject, html });
+      await sendTrackingEmail(orderId, { number: trackingNumber, carrier: payload.carrier || null, estimatedDelivery });
     } catch (err) {
       console.error("[shipOrder] tracking email failed:", err);
     }

@@ -11,7 +11,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 5 | Coupons + server-side totals | High | Done (merged into `develop`) |
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done (merged into `develop`; email decision pending) |
 | 7 | Order management (admin + rep + physician) | High | Done (merged into `develop`) |
-| 8 | Fulfillment + shipping labels | High | Not started |
+| 8 | Fulfillment + shipping labels | High | Done on branch `phase-8-shipping-labels` (WP setup + first real label pending) |
 | 9 | Refunds, returns, webhooks + commission sync | Highest | Not started |
 | 10 | Reports, purana data, cleanup + go-live | High | Not started |
 
@@ -370,32 +370,52 @@ Mashwara: WP admin → WooCommerce → Settings → Emails mein "New order", "Pr
 
 ## Phase 8: Fulfillment + shipping labels
 
-**Goal:** Label kharidna aur tracking WooCommerce plugin se ho, custom FedEx / UPS / USPS code ki jagah. (Shipping errors ka bara hissa yahin hai.)
+**Goal:** Label kharidna aur tracking WooCommerce plugin se ho, custom FedEx / UPS / USPS code ki jagah.
 
-**Steps**
+**Faisla (2026-10-13):** Saari shipping Woo se. Plugin **WooCommerce Shipping** (WP par lag chuka, v2.4.2). Woo ke apne carrier accounts / rates; client ke FedEx / UPS accounts nahi. Label **WP admin** mein order page par plugin ke panel se banta hai; plugin ki undocumented API se Next.js label nahi kharidta.
 
-1. Plugin choose karein: **WooCommerce Shipping** (USPS / UPS / DHL) ya **ShipStation** (FedEx + UPS + USPS sab). FedEx chahiye to ShipStation.
-2. Carrier accounts **production** credentials ke saath plugin mein (abhi teeno sandbox / test URLs par hain).
-3. Label ke liye weight / dimensions products se (Phase 2), ship-from address store settings se.
-4. Tracking number + carrier Woo order se → Next.js (webhook ya order meta), order "shipped" + customer email.
-5. Return labels plugin se (ShipStation / UPS returns).
-6. Admin order page ka custom shipping panel → "Create label in WooCommerce / ShipStation" link. Purane `Shipment` records read-only rahein.
-7. Purana code (`lib/shipping/*`, `actions/admin/shipping.ts`, `/api/shipping/rates`) Phase 10 mein remove.
+**Kya bana**
 
-**Testing**
+1. **Label → hamara order:** plugin label ko Woo order meta `wcshipping_labels` mein rakhta hai aur order save karta hai. Order taaza hone par (webhook, cron, ya order kholna) `lib/orders/woo-labels.ts`:
+   - har label `WooLabel` table mein (`orderId + labelId` unique index haath se banaya, Prisma Mongo par index nahi banata)
+   - pehla outbound label → order **SHIPPED** (Woo: completed + `pronuvia_status` + tracking meta), lists mein sab se naya active label ka tracking
+   - har outbound label ki tracking email **ek hi baar** (claim ke saath) patient ko, physician bcc, `sales1` cc (wahi email jo pehle thi, ab `lib/orders/tracking-email.ts`)
+   - **return label** → status nahi badalta, email nahi
+   - **refund** hua label → "Refunded", tracking baqi active label par (koi na ho to khaali); status nahi palat'ta
+2. **Webhook** `POST /api/woo/webhooks`: `X-WC-Webhook-Signature` (HMAC-SHA256, `WOO_WEBHOOK_SECRET`) ki jaanch; ghalat / bina signature → 401; Woo ka ping → 200; `order.*` → order taaza (response ke baad).
+3. **Cron** `/api/cron/woo-order-sync`: ab pichle 2 din mein badle Woo orders bhi taaza karta hai (webhook chook jaye to).
+4. **Shipment page** (`/admin/orders/[id]/shipment`): "Open order #N in WooCommerce ↗" (WP admin, wahan label / return label), labels ki list (carrier, service, tracking link, package, Return / Refunded, "tracking emailed"), "Refresh from WooCommerce", aur purane custom labels ("Earlier labels", sirf dekhne ke liye, PNG / PDF).
+5. **FedEx 2Day** naam dheela milaya jata hai (`lib/orders/shipping-method.ts`: "FedEx 2Day Shipping", "fedex 2 days", "Fedex 2-Day"): shipment page, order page, packing list par narangi chetawani.
+6. **Hataya:** `lib/shipping/{fedex,ups,usps,types}.ts`, `actions/admin/shipping.ts` ka rates / label kharidna, `components/admin/shipping-page-client.tsx`, `shipping-panel.tsx` (kahin istemal nahi tha), `/api/shipping/rates`, `/api/test-ups`, `/api/test-usps`. `Shipment` table purane labels ke liye rehta hai.
 
-- [ ] US order → label bane, tracking Woo order par, Next.js par dikhe
-- [ ] Har carrier (USPS, UPS, FedEx) ka ek label
-- [ ] 4x6 aur Letter label size
-- [ ] Apartment / Suite wala address (address2) → label par sahi
-- [ ] Ghalat ZIP → carrier ka saaf error, order kharab na ho
-- [ ] International (Canada) order → customs form ke saath label
-- [ ] Local Pickup order → label ki zarurat nahi, seedha complete
-- [ ] FedEx 2Day order → admin ko clear dikhe ke 2Day label lena hai
-- [ ] Return label → order status na badle
-- [ ] Ek order ke 2 packages → dono tracking numbers
-- [ ] Tracking email customer ko jaye, duplicate nahi
-- [ ] Purana order (custom label wala) → purana Shipment ab bhi dikhe
+**WP admin mein abhi baqi (label banne ke liye zaroori)**
+- WooCommerce Shipping mein **payment card** (postage isi se; koi sandbox nahi)
+- **Store ka poora address** (WooCommerce → Settings → General); abhi sirf "US: NY"
+- Kam se kam ek **box size** (WooCommerce Shipping → Packages)
+- FedEx 2Day chahiye to **New York zone** mein bhi method
+
+**Deploy ke waqt**
+- `WOO_WEBHOOK_SECRET` (`.env` mein abhi khaali): ek lamba random secret, Vercel env mein bhi.
+- Woo mein webhook: topic **Order updated**, delivery URL `https://<live-domain>/api/woo/webhooks`, wohi secret. (Webhook localhost tak nahi pahunch sakta; tab tak cron aur order kholna kaam karte hain.)
+- `.env` se `FEDEX_*`, `UPS_*`, `USPS_*`, `SHIP_FROM_*` hata sakte hain (code ab inhein nahi padhta).
+
+**Note:** Woo ki "Completed order" email ON ho to label ke baad rep / physician ko Woo ki email bhi jayegi (Phase 6 wala email faisla).
+
+**Testing** (label plugin ki apni meta `wcshipping_labels` REST se likh kar, koi asli label / paisa nahi; 17/17 + Phase 7 ke 20/20 dobara)
+
+- [x] Label → signed webhook → order SHIPPED, tracking order par, Woo completed + tracking meta
+- [x] Tracking email patient ko ek baar; wohi webhook dobara → dusri email nahi
+- [x] Ek order ke 2 packages → dono labels, naya tracking order par, har label ki ek email
+- [x] Label refund → "Refunded", tracking dusre label par, status SHIPPED hi
+- [x] Return label → status na badle, email nahi
+- [x] Webhook: ping 200; ghalat / bina signature 401
+- [x] Webhook chooka → cron label utha leta hai
+- [x] FedEx 2Day ("fedex 2 days") → shipment page + packing list par chetawani
+- [x] Purana order (custom label wala) → "Earlier labels" read-only, Woo button nahi
+- [ ] **Pehla asli label** (WP admin mein, asli order par): label PDF, tracking hamare panel par, patient email
+- [ ] 4x6 / Letter, address2 label par, ghalat ZIP ka error, Canada customs: ye sab plugin ke apne panel mein hote hain; pehle asli labels ke saath dekh lein
+- [ ] Har carrier ka ek label: plugin jo carriers deta hai (USPS, UPS, DHL, FedEx kuch services)
+- [ ] Local Pickup: Woo mein method abhi nahi; banayein to admin status dropdown se "Completed" kare
 
 **Done kab:** Saare naye labels plugin se, koi custom carrier API call nahi.
 

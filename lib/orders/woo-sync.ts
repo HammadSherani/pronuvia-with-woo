@@ -67,19 +67,18 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
     if (!woo) {
       // The customer is the physician for physician and on-behalf orders, else
       // the rep; one not linked yet is linked now (a guest order if that fails)
-      const customerId = order.physicianId
-        ? await getOrCreateWooCustomer("PHYSICIAN", order.physicianId).catch(() => null)
-        : order.salesRepId
-          ? await getOrCreateWooCustomer("SALES_REP", order.salesRepId).catch(() => null)
-          : null;
+      const owner = order.physicianId
+        ? { role: "PHYSICIAN" as const, id: order.physicianId }
+        : order.salesRepId ? { role: "SALES_REP" as const, id: order.salesRepId } : null;
+      const customerId = owner ? await getOrCreateWooCustomer(owner.role, owner.id).catch(() => null) : null;
 
       const shipping = address(order.shippingAddress);
       if (!shipping) throw new Error("Order has no readable shipping address.");
       const card = order.paymentMethod === "CARD";
 
-      const created = await createWooOrder({
+      const send = (customer: number | null) => createWooOrder({
         orderNumber: order.orderNumber,
-        customerId,
+        customerId:  customer,
         billing:     address(order.billingAddress) ?? shipping,
         shipping,
         lines: (order.items as unknown as OrderItem[]).map((i) => ({
@@ -112,6 +111,21 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
           pronuvia_customer_phone:              order.customerPhone,
         },
       });
+
+      let created: Awaited<ReturnType<typeof send>>;
+      try {
+        created = await send(customerId);
+      } catch (e) {
+        if (!owner || !customerId || !isInvalidCustomer(e)) throw e;
+        // The linked Woo customer no longer exists (deleted in WP admin): link
+        // the account again (or create its customer), else send it as a guest
+        await unlinkWooCustomer(owner.role, owner.id);
+        const relinked = await getOrCreateWooCustomer(owner.role, owner.id).catch(() => null);
+        created = await send(relinked).catch((e2) => {
+          if (relinked && isInvalidCustomer(e2)) return send(null);
+          throw e2;
+        });
+      }
       woo = created.order;
       couponFallback = created.couponFallback;
     }
@@ -161,6 +175,14 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
 export async function sendNewOrderToWoo(orderId: string): Promise<void> {
   await syncOrderToWoo(orderId);
   await retryPendingWooOrders(5);
+}
+
+const isInvalidCustomer = (e: unknown) =>
+  e instanceof WooError && (e.code === "woocommerce_rest_invalid_customer_id" || /customer id is invalid/i.test(e.message));
+
+async function unlinkWooCustomer(role: "PHYSICIAN" | "SALES_REP", id: string) {
+  if (role === "PHYSICIAN") await prisma.partneringPhysician.update({ where: { id }, data: { wooCustomerId: null } });
+  else await prisma.salesRepresentative.update({ where: { id }, data: { wooCustomerId: null } });
 }
 
 /** Retries orders that could not be sent yet. */

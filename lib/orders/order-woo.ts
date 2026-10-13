@@ -7,6 +7,8 @@ import {
   addWooOrderNote, getWooOrder, updateWooOrder, type WooOrderAddress, type WooOrderDetail,
 } from "@/lib/woo/orders";
 import { fromWooStatus, STATUS_META_KEY, toWooStatus } from "./woo-status";
+import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./woo-labels";
+import { wooFetch } from "@/lib/woo/client";
 
 // Orders live in WooCommerce; our Order record is the index the order lists,
 // permissions and commissions run on. Every change made here goes to Woo
@@ -192,4 +194,34 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
     ...(typeof phone === "string" && phone !== (order.customerPhone ?? "") && { customerPhone: phone || null }),
   };
   if (Object.keys(data).length) await prisma.order.update({ where: { id: order.id }, data });
+
+  // Labels bought in WP admin (WooCommerce Shipping)
+  await applyWooLabels(order.id, parseWooLabels(metaValue(w, LABELS_META_KEY)), async (label) => {
+    const carrier = `${carrierName(label.carrier)} - ${label.service}`;
+    // The label is bought: a Woo failure here is resent on the next refresh
+    await pushOrderToWoo(order.id, {
+      status: OrderStatus.SHIPPED,
+      meta:   { [META.trackingNumber]: label.tracking, [META.carrier]: carrier },
+    }).catch((e) => console.error(`[order-woo] shipped status not sent for Woo order #${order.wooOrderId}:`, e));
+    await applyStatusLocally(order.id, OrderStatus.SHIPPED);
+  });
+}
+
+/**
+ * Brings every order changed in Woo lately up to date: a safety net for
+ * missed webhooks (labels bought, statuses changed in WP admin).
+ */
+export async function refreshRecentWooOrders(days = 2): Promise<number> {
+  const after = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 19);
+  let refreshed = 0;
+  for (let page = 1; page <= 10; page++) {
+    const { data } = await wooFetch<{ id: number }[]>(`wc/v3/orders?modified_after=${after}&per_page=100&page=${page}&_fields=id`);
+    const ours = await prisma.order.findMany({ where: { wooOrderId: { in: data.map((o) => o.id) } }, select: { id: true } });
+    for (const o of ours) {
+      await refreshOrderFromWoo({ id: o.id });
+      refreshed++;
+    }
+    if (data.length < 100) break;
+  }
+  return refreshed;
 }
