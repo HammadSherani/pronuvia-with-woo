@@ -8,6 +8,7 @@ import {
 } from "@/lib/woo/orders";
 import { fromWooStatus, STATUS_META_KEY, toWooStatus } from "./woo-status";
 import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./woo-labels";
+import { importWooRefunds } from "./refunds";
 import { wooFetch } from "@/lib/woo/client";
 
 // Orders live in WooCommerce; our Order record is the index the order lists,
@@ -93,8 +94,12 @@ export async function pushOrderToWoo(orderId: string, changes: WooChanges): Prom
   const shipping = changes.shipping !== undefined ? toWooAddress(changes.shipping) : null;
   const billing  = changes.billing  !== undefined ? toWooAddress(changes.billing)  : null;
 
+  // Never "refunded": Woo would then refund the whole remaining amount by
+  // itself. Woo turns Refunded from real refunds (lib/orders/refunds.ts);
+  // our REFUNDED rides in the meta.
+  const status = changes.status && changes.status !== OrderStatus.REFUNDED ? toWooStatus(changes.status) : null;
   await updateWooOrder(order.wooOrderId, {
-    ...(changes.status && { status: toWooStatus(changes.status) }),
+    ...(status && { status }),
     ...(shipping && { shipping }),
     ...(billing  && { billing }),
     ...(meta.length && { meta_data: meta }),
@@ -173,10 +178,21 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
   }
   if (w.status === "trash") return;
 
+  // Refunds made in WP admin
+  await importWooRefunds(order.id, w);
+  const current = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, select: { status: true, updatedAt: true } });
+  order.status = current.status;
+  order.updatedAt = current.updatedAt;
+
+  // Refunded here without all of the money refunded in Woo (e.g. shipping
+  // kept, or set from the status dropdown) stays un-Refunded in Woo on
+  // purpose (see pushOrderToWoo): that is in step
+  const refundedHere = order.status === OrderStatus.REFUNDED && metaValue(w, STATUS_META_KEY) === OrderStatus.REFUNDED;
+
   // The statuses disagree: either it was changed in WP admin, or one of our
   // changes could not reach Woo (a refund or label is never undone for that).
   // The later change wins; ours is sent to Woo again.
-  if (toWooStatus(order.status) !== w.status) {
+  if (!refundedHere && toWooStatus(order.status) !== w.status) {
     if (new Date(`${w.date_modified_gmt}Z`) > order.updatedAt) {
       await applyStatusLocally(order.id, fromWooStatus(w.status, metaValue(w, STATUS_META_KEY)));
     } else {

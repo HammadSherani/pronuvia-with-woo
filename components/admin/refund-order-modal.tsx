@@ -58,13 +58,17 @@ export function RefundOrderModal({
     items.map((item, idx) => Math.max(0, item.quantity - (alreadyRefunded[idx] ?? 0)))
   );
   const [reason,          setReason]        = useState("");
-  const [custMethod,      setCustMethod]    = useState<"manual" | "stripe">("manual");
+  type Method = "manual" | "stripe" | "wallet";
+  // Wallet orders go back to the wallet that paid
+  const defaultMethod: Method = paymentMethod === "WALLET" ? "wallet" : "manual";
+  const [custMethod,      setCustMethod]    = useState<Method>(defaultMethod);
   const [custAmount,      setCustAmount]    = useState<string>("");
   const [includeShipping, setIncludeShipping] = useState(false);
   const [isPending,       start]            = useTransition();
   const overlayRef                          = useRef<HTMLDivElement>(null);
 
   const canStripe = !!(stripePaymentIntentId && paymentMethod === "CARD");
+  const canWallet = paymentMethod === "WALLET";
 
   const maxByIdx = items.map((item, idx) => Math.max(0, item.quantity - (alreadyRefunded[idx] ?? 0)));
 
@@ -72,7 +76,7 @@ export function RefundOrderModal({
   useEffect(() => {
     if (open) {
       setQtys(items.map((item, idx) => Math.max(0, item.quantity - (alreadyRefunded[idx] ?? 0))));
-      setCustMethod("manual");
+      setCustMethod(defaultMethod);
       setCustAmount("");
       setIncludeShipping(false);
     }
@@ -375,14 +379,14 @@ export function RefundOrderModal({
                   </div>
                   <div className="px-4 py-3 space-y-3">
                     <div className="flex items-center gap-2">
-                      {(["manual", ...(canStripe ? (["stripe"] as const) : [])] as const satisfies readonly ("manual"|"stripe")[]).map((m) => {
-                        const labels: Record<"manual"|"stripe", string> = { manual: "Manual", stripe: "Via Stripe" };
+                      {([...(canWallet ? (["wallet"] as const) : []), "manual", ...(canStripe ? (["stripe"] as const) : [])] as Method[]).map((m) => {
+                        const labels: Record<Method, string> = { manual: "Manual", stripe: "Via Stripe", wallet: "To wallet" };
                         const active = custMethod === m;
                         return (
                           <button key={m} type="button" onClick={() => setCustMethod(m)}
                             className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
                               active
-                                ? m === "stripe" ? "bg-indigo-600 text-white border-indigo-600" : "bg-emerald-600 text-white border-emerald-600"
+                                ? m === "stripe" ? "bg-indigo-600 text-white border-indigo-600" : m === "wallet" ? "bg-teal-600 text-white border-teal-600" : "bg-emerald-600 text-white border-emerald-600"
                                 : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
                             }`}
                           >
@@ -425,6 +429,11 @@ export function RefundOrderModal({
                           <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                         </svg>
                         Stripe will send the refund to the original card used for payment.
+                      </div>
+                    )}
+                    {custMethod === "wallet" && (
+                      <div className="text-[11px] text-teal-700 bg-teal-50 rounded-lg px-3 py-2">
+                        The amount goes back to the wallet that paid for this order.
                       </div>
                     )}
                     {custMethod === "manual" && (

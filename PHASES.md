@@ -12,7 +12,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done (merged into `develop`; email decision pending) |
 | 7 | Order management (admin + rep + physician) | High | Done (merged into `develop`) |
 | 8 | Fulfillment + shipping labels | High | Done (merged into `develop`; WP setup + first real label pending) |
-| 9 | Refunds, returns, webhooks + commission sync | Highest | Not started |
+| 9 | Refunds, returns, webhooks + commission sync | Highest | Done on branch `phase-9-refunds-webhooks` (your test pending) |
 | 10 | Reports, purana data, cleanup + go-live | High | Not started |
 
 ## Kaam ka rule
@@ -425,30 +425,42 @@ Mashwara: WP admin → WooCommerce → Settings → Emails mein "New order", "Pr
 
 **Goal:** Woo mein jo bhi badle, Next.js tak pohanche. Refund / return par paisa aur commission sahi hon.
 
-**Steps**
+**Pehle se (Phase 7–8):** webhook route `/api/woo/webhooks` (signature, 401), order taaza karna, WP admin cancel → clawback, "jo baad mein badla woh jeete", rozana cron.
 
-1. Webhooks: `order.created`, `order.updated`, `order.deleted`, `product.updated`, `coupon.updated` → `app/api/woo/webhook`, `X-WC-Webhook-Signature` verify, idempotent, out-of-order safe.
-2. `product.updated` → catalog cache `revalidateTag`.
-3. Refund flow (`refund-order-modal`, `return-order-modal`, `processReturn`): Stripe refund Next.js se (payment Next.js mein hua) → Woo refund record (`api_refund: false`, line items, restock) → `OrderRefund` + clawback.
-4. Wallet order refund → wallet credit + `WalletTransaction`.
-5. Clawback rules: sweep se pehle refund = commission kabhi credit na ho; sweep ke baad = `reverseOrderCommissionIfPaid`.
-6. WP admin se seedha refund ho jaye → webhook se Next.js mein clawback.
-7. Cron jobs (auto-withdraw, payout notifications, manual sweep) naye data ke saath verify.
+**Kya bana**
 
-**Testing**
+1. `lib/orders/refunds.ts` (refund ka saara logic ek jagah; `processReturn` ab sirf login + page refresh):
+   - **Admin ka Refund / Return:** pehle paisa (Stripe / **wallet (naya)** / manual), phir hamara `OrderRefund` + clawback + order totals / status + refund email, phir **Woo refund** (`api_refund: false`, items ki qty, `restock_items` → Woo stock wapas). Woo refund par meta `pronuvia_refund_id`, aur `OrderRefund.wooRefundId`.
+   - Woo refund mein **sirf asli lautaya paisa**; lines par bhi wahi rakam batti hai (bina paisa return → $0 refund, stock phir bhi wapas; Woo khaali amount par lines jod kar rakam bana leta hai, is liye lines bhi $0).
+   - **Wallet order** → refund modal mein "To wallet" (default); jis wallet se paisa gaya tha (physician ya rep) us mein credit + `WalletTransaction` CREDIT. Card order wallet mein refund nahi ho sakta.
+   - **WP admin se refund** (webhook / cron / order kholna) → wahi record + clawback; wallet order → wallet credit; card order → Stripe refund WP se nahi hota, `sales1` ko alert. Har Woo refund sirf ek baar (`OrderRefund.wooRefundId` par unique partial index, haath se banaya).
+2. **Woo ko status "refunded" kabhi nahi bheja jata** (dropdown, retry, sync). Woo phir baqi poori rakam ka refund khud bana deta (Phase 7 mein dekha tha) aur woh ek nakli refund ban kar import ho jata. Woo "Refunded" sirf asli refunds se hota hai (poora paisa lautane par Woo khud karta hai); hamara REFUNDED meta `pronuvia_status` mein. Shipping rakh kar sab items refund → hamara REFUNDED, Woo apna status rakhta hai; order kholne par ise barabar mana jata hai.
+3. **Wallet ki rakam atomic** (`increment`), phir 2 decimal par round (sirf tab jab beech mein kisi ne na badla ho). Pehle refund credit aur clawback "padho phir likho" se ek dusre ko mita sakte the, aur `increment` 5090.469999 jaise farq chhodta tha.
+4. **Commission:** sweep (pehle se) `commission − clawback` credit karta hai aur refunded / cancelled orders chhodta hai; sweep ke baad refund → wallet se clawback, current period mein.
+5. **Webhook:** `product.*` → shop catalog cache stale (`revalidateTag(CATALOG_TAG, "max")`). Har delivery Woo se taaza order padhti hai, is liye dohrai / ulti tarteeb wali deliveries ka asar ek hi.
 
-- [ ] Galat signature → 401, kuch update nahi
-- [ ] Same webhook 2 baar → ek hi effect
-- [ ] Webhooks ulti tarteeb mein → purana status naye ko overwrite na kare
-- [ ] Card order full refund → Stripe refund, Woo refunded, stock wapas, commission clawback
-- [ ] Partial refund (1 item, qty 1 of 3) → proportional clawback
-- [ ] Wallet order refund → wallet credit
-- [ ] Sweep se pehle refund → commission credit na ho
-- [ ] Sweep ke baad refund → reversal transaction, sahi period
-- [ ] WP admin se refund → Next.js mein clawback aaye
-- [ ] Return label + return → status / stock / commission sahi
-- [ ] Monthly sweep (test period) → sirf eligible orders, double credit nahi
-- [ ] Withdrawal request + statement PDF → naye orders sahi
+**Deploy ke waqt (Phase 8 wali list ke saath)**
+- Woo webhooks: **Order updated** aur **Product updated** (aur chahein to Product created / deleted), delivery URL `https://<live-domain>/api/woo/webhooks`, secret = `WOO_WEBHOOK_SECRET`.
+
+**Note:**
+- WP admin se card order ka refund karne par customer ke card mein paisa **nahi** jata (Stripe Next.js ka hai); team ko alert jata hai. Card refunds hamare admin se karein.
+- Refund modal paisa khud bhar deta hai (pehle se); sirf items wapas lene hon to amount khaali karein.
+- Woo ki "Refunded order" email ON ho to rep / physician ko Woo ki email bhi jayegi (email faisla).
+
+**Testing** (Stripe test mode, email band, test data saaf; server-level 19/19, UI 7/7, Phase 7 20/20 + Phase 8 17/17 dobara)
+
+- [x] Card full refund → Stripe refund, Woo refunded, stock wapas, hamara REFUNDED; dobara refresh → duplicate nahi
+- [x] Partial (3 mein se 1) sweep ke baad → clawback 1/3 (rep −$0.50, physician −$0.25) current period mein; Woo refund 1 item / $5; status na badle
+- [x] Wallet order refund → wallet +$24.99 + CREDIT entry (UI se bhi, "To wallet" default)
+- [x] Sab items refund, shipping rakhi → hamara REFUNDED, Woo apna status, Woo ne shipping khud refund nahi ki
+- [x] WP admin refund (1 item) → ek hi baar import (do refresh ek saath), wallet credit, stock wapas
+- [x] WP admin mein status "Refunded" → poora refund record, hamara REFUNDED, card order par team alert
+- [x] Sweep se pehle refund → sweep sirf `commission − clawback` (2020-01 test period, asli orders nahi chhue); poora refunded order chhoota; doosri sweep → kuch dobara nahi
+- [x] Bina paisa return (2 of 3) → Woo $0 refund, stock +2, wallet / status nahi badle
+- [x] Product webhook (signed) → 200, catalog stale
+- [x] Ghalat signature → 401 (Phase 8)
+- [ ] Auto-withdraw / payout notifications crons aur withdrawal statement PDF naye orders ke saath (code nahi badla; asli period par chalane se asli wallets badalte, is liye nahi chalaya)
+- [ ] Aap ka apna test: ek card aur ek wallet order ka admin se refund
 
 **Done kab:** Har paisa / commission / stock change dono systems mein match kare.
 

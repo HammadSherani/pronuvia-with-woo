@@ -297,9 +297,13 @@ model OrderRefund {
   salesRepClawback  Float    @default(0)
   physicianClawback Float    @default(0)
   reason               String?
-  customerRefundMethod String?  // "manual" | "stripe"
+  customerRefundMethod String?  // "manual" | "stripe" | "wallet"
   customerRefundAmount Float?
   stripeRefundId       String?
+  // The matching WooCommerce refund (Phase 9). Refunds made here create it;
+  // refunds made in WP admin are imported with it (one record per Woo refund).
+  wooRefundId          Int?
+  source               String?  // "pronuvia" | "woocommerce"; null before Phase 9
   processedAt          DateTime @default(now())
 }
 

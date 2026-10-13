@@ -131,7 +131,7 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
     }
 
     // Changed here while it waited (e.g. cancelled): Woo created it as processing
-    if (woo.status !== toWooStatus(order.status)) {
+    if (order.status !== "REFUNDED" && woo.status !== toWooStatus(order.status)) {
       woo = await updateWooOrder(woo.id, { status: toWooStatus(order.status) });
     }
 
