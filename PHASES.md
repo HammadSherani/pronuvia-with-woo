@@ -9,7 +9,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 3 | Customers + structured addresses | Medium | Done (merged into `develop`) |
 | 4 | Shipping rates → Woo zones | High | Done (merged into `develop`) |
 | 5 | Coupons + server-side totals | High | Done (merged into `develop`) |
-| 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done on branch `phase-6-orders` (your test + email decision pending) |
+| 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done (merged into `develop`; email decision pending) |
 | 7 | Order management (admin + rep + physician) | High | Not started |
 | 8 | Fulfillment + shipping labels | High | Not started |
 | 9 | Refunds, returns, webhooks + commission sync | Highest | Not started |
