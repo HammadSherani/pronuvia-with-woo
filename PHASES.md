@@ -10,7 +10,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 4 | Shipping rates → Woo zones | High | Done (merged into `develop`) |
 | 5 | Coupons + server-side totals | High | Done (merged into `develop`) |
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done (merged into `develop`; email decision pending) |
-| 7 | Order management (admin + rep + physician) | High | Not started |
+| 7 | Order management (admin + rep + physician) | High | Done on branch `phase-7-order-screens` (your test pending) |
 | 8 | Fulfillment + shipping labels | High | Not started |
 | 9 | Refunds, returns, webhooks + commission sync | Highest | Not started |
 | 10 | Reports, purana data, cleanup + go-live | High | Not started |
@@ -310,28 +310,59 @@ Mashwara: WP admin → WooCommerce → Settings → Emails mein "New order", "Pr
 
 **Goal:** Saari order screens Woo orders se chalein.
 
-**Steps**
+**Tareeqa (plan se thoda alag, kyun):** Woo REST API order list ko hamare meta (rep / physician) se filter nahi kar sakti, aur rep ko apne physicians ke orders bhi dikhte hain (Woo `customer` filter un ko nahi pakadta). Is liye:
+- **Lists** (admin, rep, physician, rep / physician tabs, Excel export) hamare `Order` record se chalti hain. Ye record ab Woo ka index / mirror hai.
+- **Har badlaav pehle Woo mein**, Woo maan le tab hi hamare record mein. Woo mana kare to admin ko error, kuch nahi badalta.
+- **Order dekhne par** (admin detail / invoice / packing list / shipment, rep aur physician invoice) Woo order se taaza data aata hai: status, addresses, patient email / phone. WP admin mein kiye badlaav yahan dikhte hain.
+- Webhooks (Phase 9) is mirror ko foran barabar rakhenge; tab tak "dekhne par taaza" kaam karta hai.
 
-1. Admin: orders list (search, status filter, pagination), detail, status change, bulk complete, delete → Woo API.
-2. Status mapping: PENDING → pending, PROCESSING → processing, SHIPPED → custom status `shipped` (ya tracking plugin), DELIVERED / COMPLETED → completed, CANCELLED → cancelled, REFUNDED → refunded.
-3. Order notes: private / customer → Woo order notes (`customer_note: true` email bhejta hai).
-4. Edit order address → Woo order shipping / billing.
-5. Invoice, packing list, "send order email" → Woo order data se.
-6. Rep / physician: orders pages, invoice, Excel export → Woo (`customer` filter + meta).
-7. Admin physician / rep detail ke "orders" tabs → Woo.
+**Kya bana**
 
-**Testing**
+1. `lib/orders/woo-status.ts`: status mapping. Hamare saare orders paid hain, is liye:
 
-- [ ] Admin list: search order number / name, status filter, pagination sahi
-- [ ] Status change → Woo + Mongo dono update, CANCELLED par commission sweep se bahar
-- [ ] Bulk complete 10 orders → sab completed
-- [ ] Private note → customer ko email nahi; customer note → email
-- [ ] Address edit → invoice / packing list par naya address
-- [ ] Invoice / packing list → items, discount, shipping, total sahi
-- [ ] Rep sirf apne orders dekhe; Rep A, Rep B ka invoice URL → 403
-- [ ] Physician sirf apne orders dekhe
-- [ ] Excel export → Woo data, sahi columns
-- [ ] Purane (Mongo) orders → ab bhi dikhen (Phase 10 tak read-only)
+   | Hamara | Woo |
+   | --- | --- |
+   | PENDING (naya) / PROCESSING | processing |
+   | SHIPPED / DELIVERED / COMPLETED | completed |
+   | CANCELLED | cancelled |
+   | REFUNDED | refunded |
+
+   Woo mein "shipped" status plugin / PHP ke bina nahi banta (REST se nahi). Hamara asli status meta `pronuvia_status` mein. Wapas aate waqt meta tab tak maana jata hai jab tak woh Woo status se mel khaye; WP admin mein status badla ho to Woo ka status jeet'ta hai.
+2. `lib/orders/order-woo.ts`: `pushOrderToWoo` (status, addresses, meta, note), `applyStatusLocally` (status + commission wapsi, pehle `updateOrderStatus` mein tha), `refreshOrderFromWoo`.
+   - **Jhagda ho to jo baad mein badla woh jeete:** Woo ka `date_modified` hamare `updatedAt` se naya → Woo ka status; warna hamara status dobara Woo bheja jata hai (refund / label jaisi jagah jahan Woo fail hone par kaam roka nahi ja sakta).
+   - WP admin mein cancel / refund aur commission pehle hi wallet mein ja chuki ho → wahi clawback jo dropdown se hota hai.
+3. Admin actions Woo ke saath: status dropdown, "Mark as Completed" (Woo batch, 100 tak ek request), "Move to Trash" (Woo trash, WP mein wapas laya ja sakta hai), "ship" form (completed + tracking meta + note), "send order email" ke saath status, refund / return (best effort), label kharidna (best effort, `actions/admin/shipping.ts`).
+4. Order notes = Woo order notes (Woo ke apne notes bhi, jaise status change). Private → `customer_note: false`; Patient → `customer_note: true` + hamari email patient ko (pehle jaisi). Purane orders ke notes Mongo mein hi.
+5. Address / patient phone / email edit → Woo order (shipping / billing, meta) phir hamara record.
+6. Admin detail par "WooCommerce order #N ↗" (WP admin, HPOS link), ya "Not in WooCommerce yet" + aakhri error.
+7. Admin search: order number, Woo number (#124), patient naam / email, physician / rep naam / email.
+8. Phase 6 sync: Woo order mein `pronuvia_status` + tracking meta; Woo tak pahunchne se pehle status badla ho (maslan cancel) to Woo order bhi wohi status.
+9. Bina payment wala admin "Create order" (`/admin/orders/new`, kahin link nahi tha) hata diya.
+
+**Woo ka vyavhaar jo yaad rakhna hai**
+- Status "refunded" karne par Woo **khud poore amount ka refund record** banata hai (paisa nahi hilta). Phase 9 mein Stripe refund ke saath dhyan rahe.
+- Cancel par Woo stock wapas karta hai aur coupon usage ghatata hai.
+- Patient note par Woo ki "Customer note" email bhi billing email (rep / physician) ko jati hai jab tak WP mein woh email ON hai (Phase 6 wala email faisla).
+
+**Note:** Rep / physician kisi aur ka invoice URL khole to "404 Page not found" dikhta hai, kuch data nahi. HTTP status 200 aata hai kyunke segment ka `loading.tsx` pehle stream ho jata hai; ye pehle se aisa tha.
+
+**Testing** (server-level 17/17 + browser 20/20, email band, test data saaf)
+
+- [x] Admin list search: order number, Woo number, patient naam, physician
+- [x] Status dropdown → Woo + Mongo dono; WP admin mein cancel ke baad commission paid order → clawback, commission sweep cancelled orders chhodta hai
+- [x] Bulk "Mark as Completed" → Woo batch, sab completed (3 orders se test; ek batch 100 tak)
+- [x] Private note → koi email nahi; Patient note → Woo customer note + patient ko email; note delete → Woo se bhi
+- [x] Address edit → Woo + hamara; invoice / packing list par naya address
+- [x] Invoice / packing list → items, shipping, total sahi
+- [x] WP admin mein status / address badla → admin page par dikhe
+- [x] Hamara atka hua status badlaav → dekhne par Woo ko dobara, ulta nahi palat'ta
+- [x] Cancel se pehle Woo tak na pahuncha order → Woo mein bhi cancelled
+- [x] Move to Trash → Woo trash
+- [x] Cron route se `PENDING_SYNC` orders Woo mein
+- [x] Rep / physician sirf apne invoice; doosre ka → 404 page
+- [ ] Excel export: code nahi badla (hamare record se, jo ab Woo ka mirror hai); ek baar download kar ke dekh lein
+- [ ] Purana (Phase 6 se pehle) order → detail / invoice khule (Woo link ke bina)
+- [ ] Aap ka apna test: admin se ek order ka status / note / address badal kar WP admin mein dekhein
 
 **Done kab:** Har order screen Woo se, permissions sahi.
 

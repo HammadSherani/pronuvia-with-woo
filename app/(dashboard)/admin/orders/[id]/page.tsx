@@ -14,6 +14,7 @@ import { getOrderNotes } from "@/actions/admin/order-notes";
 import { OrderNotesPanel } from "@/components/admin/order-notes-panel";
 import { EditOrderAddress, EditOrderEmail, EditOrderPhone } from "@/components/admin/edit-order-address";
 import { APP_TIMEZONE } from "@/lib/utils/timezone";
+import { wpAdmin } from "@/lib/woo/admin-links";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -333,6 +334,17 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                         <span className="ml-1"> · Paid on {fmtDateTime(order.updatedAt)}</span>
                       )}
                     </p>
+                    {order.wooOrderId ? (
+                      <a href={wpAdmin.editOrder(order.wooOrderId)} target="_blank" rel="noreferrer"
+                        className="inline-block mt-1.5 text-xs font-medium text-[#3DBFA4] hover:underline">
+                        WooCommerce order #{order.wooOrderId} ↗
+                      </a>
+                    ) : order.wooSyncStatus ? (
+                      <p className="mt-1.5 text-xs text-amber-700">
+                        Not in WooCommerce yet; it is retried automatically.
+                        {order.wooSyncError && <span className="text-amber-600"> Last error: {order.wooSyncError}</span>}
+                      </p>
+                    ) : null}
                   </div>
                   {/* <span className={`inline-flex px-2.5 py-1 border rounded-full text-xs font-semibold ${statusStyle[order.status]}`}>
                     {order.status.charAt(0) + order.status.slice(1).toLowerCase()}
