@@ -12,4 +12,6 @@ export const wpAdmin = {
   editProduct: (wooId: string | number) => `${base()}/post.php?post=${wooId}&action=edit`,
   categories:  () => `${base()}/edit-tags.php?taxonomy=product_cat&post_type=product`,
   shipping:    () => `${base()}/admin.php?page=wc-settings&tab=shipping`,
+  // High-performance order storage (HPOS) is on
+  editOrder:   (wooId: number) => `${base()}/admin.php?page=wc-orders&action=edit&id=${wooId}`,
 };

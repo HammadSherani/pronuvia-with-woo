@@ -3,6 +3,7 @@
 import { requireAdmin }          from "@/lib/auth/dal";
 import { prisma }                from "@/lib/db/prisma";
 import { revalidatePath }        from "next/cache";
+import { META, pushOrderToWoo }  from "@/lib/orders/order-woo";
 import { getFedExRates, purchaseFedExLabel }   from "@/lib/shipping/fedex";
 import { getUPSRates,   purchaseUPSLabel }     from "@/lib/shipping/ups";
 import { getUSPSRates,  purchaseUSPSLabel }    from "@/lib/shipping/usps";
@@ -308,6 +309,14 @@ export async function purchaseLabel(
     where:  { id: orderId },
     select: { status: true, items: true },
   });
+
+  // The label is bought, so a WooCommerce failure must not stop this; the
+  // order page sends the status again the next time it is opened
+  await pushOrderToWoo(orderId, {
+    status: "SHIPPED",
+    meta:   { [META.trackingNumber]: result.trackingNumber, [META.carrier]: `${result.carrierLabel} - ${result.service}` },
+    note:   `Label bought: ${result.carrierLabel} ${result.service}, tracking ${result.trackingNumber}.`,
+  }).catch((e) => console.error(`[shipping] order ${orderId}: not sent to WooCommerce:`, e));
 
   // Update order with tracking info — shippingRate is NOT overwritten here
   // because it stores what the customer paid at checkout; label cost lives in Shipment.cost

@@ -117,3 +117,61 @@ export async function findWooOrder(orderNumber: string, since: Date): Promise<Wo
 export async function addOrderNote(orderId: number, note: string): Promise<void> {
   await wooFetch(`wc/v3/orders/${orderId}/notes`, { method: "POST", body: { note, customer_note: false } });
 }
+
+// ── Reading and changing orders (Phase 7) ──
+
+export type WooOrderDetail = WooOrder & {
+  billing:  WooOrderAddress & { email?: string };
+  shipping: WooOrderAddress;
+  date_modified_gmt: string;
+};
+
+export type WooOrderNote = {
+  id:            number;
+  author:        string;
+  date_created_gmt: string;
+  note:          string;
+  customer_note: boolean;
+  added_by_user: boolean;
+};
+
+export async function getWooOrder(id: number): Promise<WooOrderDetail> {
+  return (await wooFetch<WooOrderDetail>(`wc/v3/orders/${id}`)).data;
+}
+
+export async function updateWooOrder(id: number, changes: Record<string, unknown>): Promise<WooOrderDetail> {
+  return (await wooFetch<WooOrderDetail>(`wc/v3/orders/${id}`, { method: "PUT", body: changes })).data;
+}
+
+/** Many orders at once; returns the ids Woo updated. */
+export async function updateWooOrders(updates: ({ id: number } & Record<string, unknown>)[]): Promise<Set<number>> {
+  const done = new Set<number>();
+  for (let i = 0; i < updates.length; i += 100) {
+    const { data } = await wooFetch<{ update?: { id: number; error?: unknown }[] }>("wc/v3/orders/batch", {
+      method: "POST",
+      body:   { update: updates.slice(i, i + 100) },
+    });
+    for (const u of data.update ?? []) if (u.id && !u.error) done.add(u.id);
+  }
+  return done;
+}
+
+/** Moves the order to the WooCommerce trash (it can be restored in WP admin). */
+export async function trashWooOrder(id: number): Promise<void> {
+  await wooFetch(`wc/v3/orders/${id}`, { method: "DELETE" });
+}
+
+export async function getWooOrderNotes(orderId: number): Promise<WooOrderNote[]> {
+  return (await wooFetch<WooOrderNote[]>(`wc/v3/orders/${orderId}/notes`)).data;
+}
+
+export async function addWooOrderNote(orderId: number, note: string, customerNote: boolean): Promise<WooOrderNote> {
+  return (await wooFetch<WooOrderNote>(`wc/v3/orders/${orderId}/notes`, {
+    method: "POST",
+    body:   { note, customer_note: customerNote },
+  })).data;
+}
+
+export async function deleteWooOrderNote(orderId: number, noteId: number): Promise<void> {
+  await wooFetch(`wc/v3/orders/${orderId}/notes/${noteId}?force=true`, { method: "DELETE" });
+}

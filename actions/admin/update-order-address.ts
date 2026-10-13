@@ -3,6 +3,17 @@
 import { prisma }        from "@/lib/db/prisma";
 import { requireAdmin }  from "@/lib/auth/dal";
 import { revalidatePath } from "next/cache";
+import { META, pushOrderToWoo } from "@/lib/orders/order-woo";
+
+// Each change goes to the WooCommerce order first; ours only once Woo took it
+async function toWoo(orderId: string, changes: Parameters<typeof pushOrderToWoo>[1]): Promise<string | null> {
+  try {
+    await pushOrderToWoo(orderId, changes);
+    return null;
+  } catch (e) {
+    return `WooCommerce did not accept the change: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
 
 export type OrderAddrField = {
   firstName:   string;
@@ -26,10 +37,14 @@ export async function updateOrderAddress(
   await requireAdmin();
 
   const field = type === "billing" ? "billingAddress" : "shippingAddress";
+  const json  = JSON.stringify(addr);
+
+  const failed = await toWoo(orderId, { [type]: json });
+  if (failed) return { success: false, message: failed };
 
   await prisma.order.update({
     where: { id: orderId },
-    data:  { [field]: JSON.stringify(addr) },
+    data:  { [field]: json },
   });
 
   revalidatePath(`/admin/orders/${orderId}`);
@@ -41,6 +56,9 @@ export async function updateOrderCustomerPhone(
   phone: string,
 ): Promise<{ success: boolean; message?: string }> {
   await requireAdmin();
+
+  const failed = await toWoo(orderId, { meta: { [META.customerPhone]: phone || null } });
+  if (failed) return { success: false, message: failed };
 
   await prisma.order.update({
     where: { id: orderId },
@@ -56,6 +74,9 @@ export async function updateOrderCustomerEmail(
   email: string,
 ): Promise<{ success: boolean; message?: string }> {
   await requireAdmin();
+
+  const failed = await toWoo(orderId, { meta: { [META.customerEmail]: email || null } });
+  if (failed) return { success: false, message: failed };
 
   await prisma.order.update({
     where: { id: orderId },
