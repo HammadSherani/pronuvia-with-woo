@@ -124,6 +124,8 @@ export type WooOrderDetail = WooOrder & {
   billing:  WooOrderAddress & { email?: string };
   shipping: WooOrderAddress;
   date_modified_gmt: string;
+  line_items: { id: number; product_id: number; variation_id: number; quantity: number; total: string }[];
+  refunds:    { id: number; reason: string; total: string }[];
 };
 
 export type WooOrderNote = {
@@ -174,4 +176,44 @@ export async function addWooOrderNote(orderId: number, note: string, customerNot
 
 export async function deleteWooOrderNote(orderId: number, noteId: number): Promise<void> {
   await wooFetch(`wc/v3/orders/${orderId}/notes/${noteId}?force=true`, { method: "DELETE" });
+}
+
+// ── Refunds (Phase 9) ──
+
+export type WooRefund = {
+  id:         number;
+  amount:     string;
+  reason:     string;
+  line_items: { product_id: number; variation_id: number; quantity: number; total: string }[];
+  meta_data:  WooMeta[];
+};
+
+export const REFUND_ID_KEY = "pronuvia_refund_id";
+
+export async function getWooRefund(orderId: number, refundId: number): Promise<WooRefund> {
+  return (await wooFetch<WooRefund>(`wc/v3/orders/${orderId}/refunds/${refundId}`)).data;
+}
+
+/**
+ * Records a refund on the Woo order. The money was already returned (Stripe,
+ * wallet or by hand), so Woo moves none (`api_refund: false`); it puts the
+ * refunded items back in stock.
+ */
+export async function createWooRefund(orderId: number, refund: {
+  amount:  number;
+  reason:  string;
+  lines:   { wooLineId: number; quantity: number; total: number }[];
+  ourId:   string;
+}): Promise<WooRefund> {
+  return (await wooFetch<WooRefund>(`wc/v3/orders/${orderId}/refunds`, {
+    method: "POST",
+    body: {
+      amount:        refund.amount.toFixed(2),
+      reason:        refund.reason,
+      api_refund:    false,
+      restock_items: true,
+      line_items:    refund.lines.map((l) => ({ id: l.wooLineId, quantity: l.quantity, refund_total: l.total.toFixed(2) })),
+      meta_data:     [{ key: REFUND_ID_KEY, value: refund.ourId }],
+    },
+  })).data;
 }

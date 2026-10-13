@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse, after } from "next/server";
+import { revalidateTag } from "next/cache";
+import { CATALOG_TAG } from "@/lib/woo/catalog";
 import { prisma } from "@/lib/db/prisma";
 import { refreshOrderFromWoo } from "@/lib/orders/order-woo";
 
@@ -7,8 +9,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // WooCommerce webhooks (WP admin → WooCommerce → Settings → Advanced →
-// Webhooks; secret = WOO_WEBHOOK_SECRET). An order changed in Woo (status,
-// address, a shipping label bought) is brought up to date here.
+// Webhooks; secret = WOO_WEBHOOK_SECRET; topics: Order updated, Product
+// updated / created / deleted). An order changed in Woo (status, address, a
+// shipping label, a refund) is brought up to date here; a product change
+// makes the shops reload the catalog.
+//
+// Each delivery reloads the current order from Woo rather than trusting the
+// payload, so repeated or out-of-order deliveries all end in the same state.
 export async function POST(req: NextRequest) {
   const raw = await req.text();
 
@@ -31,6 +38,8 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
+
+  if (topic.startsWith("product.")) revalidateTag(CATALOG_TAG, "max");
 
   if (topic.startsWith("order.") && typeof id === "number") {
     // Answer Woo right away; it gives up on slow deliveries
