@@ -99,15 +99,18 @@ export async function createWooOrder(o: NewWooOrder): Promise<{ order: WooOrder;
   }
 }
 
+export const ORDER_ID_KEY = "pronuvia_order_id";
+
 /**
- * An order we already sent, found by our order number. A send can succeed in
- * Woo even when its response never reaches us, so a retry looks first.
+ * An order we already sent, found by our order id. A send can succeed in Woo
+ * even when its response never reaches us, so a retry looks first. Not by the
+ * order number: a number can come back after the newest order is deleted.
  */
-export async function findWooOrder(orderNumber: string, since: Date): Promise<WooOrder | null> {
+export async function findWooOrder(orderId: string, since: Date): Promise<WooOrder | null> {
   const after = new Date(since.getTime() - 60 * 60 * 1000).toISOString().slice(0, 19);
   for (let page = 1; page <= 5; page++) {
     const { data } = await wooFetch<WooOrder[]>(`wc/v3/orders?after=${after}&per_page=100&page=${page}&status=any`);
-    const hit = data.find((w) => w.meta_data.some((m) => m.key === ORDER_NUMBER_KEY && String(m.value) === orderNumber));
+    const hit = data.find((w) => w.meta_data.some((m) => m.key === ORDER_ID_KEY && String(m.value) === orderId));
     if (hit) return hit;
     if (data.length < 100) break;
   }
