@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { sendNewOrderToWoo, SYNC } from "@/lib/orders/woo-sync";
 import { Prisma } from "@/generated/prisma/client";
 import { stripe } from "@/lib/stripe/server";
 import { takeCardQuote } from "@/lib/checkout/card-payment";
@@ -55,7 +57,7 @@ export async function confirmCardOrder(
   const quote = await takeCardQuote(pi, session.userId);
   if (!quote.ok) return { success: false, message: quote.message };
   const {
-    items, subtotal, total, discountAmount, couponCode, shippingRate, shippingMethod, taxAmount,
+    items, subtotal, total, discountAmount, couponCode, shippingRate, shippingMethod, shippingRateId, taxAmount,
     shippingAddress, billingAddress, notes, customerEmail, customerPhone,
   } = quote.order;
 
@@ -82,6 +84,8 @@ export async function confirmCardOrder(
         total,
         discountAmount,
         taxAmount,
+        shippingRateId,
+        wooSyncStatus: SYNC.PENDING,
         couponCode:     couponCode     || undefined,
         salesRepCommissionRate:    commissionRate,
         salesRepCommissionAmount:  commissionAmount,
@@ -108,8 +112,19 @@ export async function confirmCardOrder(
   ];
   ops.push(prisma.checkoutQuote.delete({ where: { id: quote.quoteId } }));
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await prisma.$transaction(ops as any);
+  let created: { id: string };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [created] = (await prisma.$transaction(ops as any)) as [{ id: string }];
+  } catch (e) {
+    // The same payment confirmed twice at once (double click, or the 3-D
+    // Secure return): the quote can only be used once, so the other one won
+    const done = await prisma.order.findFirst({ where: { stripePaymentIntentId: pi.id } });
+    if (done) return { success: true, orderNumber: done.orderNumber };
+    throw e;
+  }
+  // Then into WooCommerce, once the response is sent; a failure is retried
+  after(() => sendNewOrderToWoo(created.id));
 
   if (customerEmail) {
     try {

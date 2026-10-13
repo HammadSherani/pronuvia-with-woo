@@ -48,6 +48,7 @@ export type PricedOrder = {
   couponCode:      string | undefined;
   shippingRate:    number;
   shippingMethod:  string;
+  shippingRateId:  string;
   taxAmount:       number;
   total:           number;
   shippingAddress: string;
@@ -156,6 +157,7 @@ export async function priceOrder(raw: unknown, role: CouponRole): Promise<PriceO
       couponCode:      quote.coupon?.code.toUpperCase(),
       shippingRate:    rate.cost,
       shippingMethod:  rate.label,
+      shippingRateId:  rate.id,
       taxAmount:       round2(quote.itemTax + rate.tax),
       total,
       shippingAddress: input.shippingAddress,
