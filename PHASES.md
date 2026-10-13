@@ -13,7 +13,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 7 | Order management (admin + rep + physician) | High | Done (merged into `develop`) |
 | 8 | Fulfillment + shipping labels | High | Done (merged into `develop`; WP setup + first real label pending) |
 | 9 | Refunds, returns, webhooks + commission sync | Highest | Done (merged into `develop`) |
-| 10 | Reports, purana data, cleanup + go-live | High | Code done on branch `phase-10-go-live`; go-live steps pending (`GO-LIVE.md`) |
+| 10 | Reports, purana data, cleanup + go-live | High | Code merged into `develop`; go-live steps pending (`GO-LIVE.md`) |
 
 ## Kaam ka rule
 
