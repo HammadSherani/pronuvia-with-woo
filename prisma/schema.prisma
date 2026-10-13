@@ -331,6 +331,27 @@ model CheckoutQuote {
   createdAt   DateTime @default(now())
 }
 
+// A shipping label bought with the WooCommerce Shipping plugin (WP admin),
+// read from the Woo order's `wcshipping_labels` meta. Kept here so each
+// label's tracking email goes out once and the order lists show tracking.
+// Labels bought with the old custom FedEx / UPS / USPS code stay in Shipment.
+model WooLabel {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  orderId     String    @db.ObjectId
+  labelId     Int                       // the plugin's label id
+  tracking    String
+  carrier     String                    // usps, ups, fedex, dhlexpress
+  service     String
+  packageName String?
+  isReturn    Boolean   @default(false)
+  refunded    Boolean   @default(false)
+  purchasedAt DateTime
+  notifiedAt  DateTime?                 // tracking email sent
+  createdAt   DateTime  @default(now())
+
+  @@unique([orderId, labelId])
+}
+
 model Shipment {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   orderId        String   @db.ObjectId
