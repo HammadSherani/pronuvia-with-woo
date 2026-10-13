@@ -12,7 +12,7 @@ Saara commerce (products, stock, customers, shipping, coupons, cart totals, orde
 | 6 | Checkout → Woo orders (3 checkouts, Card + Wallet) | Highest | Done (merged into `develop`; email decision pending) |
 | 7 | Order management (admin + rep + physician) | High | Done (merged into `develop`) |
 | 8 | Fulfillment + shipping labels | High | Done (merged into `develop`; WP setup + first real label pending) |
-| 9 | Refunds, returns, webhooks + commission sync | Highest | Done on branch `phase-9-refunds-webhooks` (your test pending) |
+| 9 | Refunds, returns, webhooks + commission sync | Highest | Done (merged into `develop`) |
 | 10 | Reports, purana data, cleanup + go-live | High | Not started |
 
 ## Kaam ka rule
