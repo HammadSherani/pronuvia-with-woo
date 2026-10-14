@@ -10,6 +10,7 @@ type Props = {
   searchParams: Promise<{ token?: string }>;
 };
 
+
 export default async function AdminSetupPage({ searchParams }: Props) {
   const { token } = await searchParams;
 
