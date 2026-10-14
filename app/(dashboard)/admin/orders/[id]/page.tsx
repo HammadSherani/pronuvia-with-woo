@@ -14,6 +14,8 @@ import { getOrderNotes } from "@/actions/admin/order-notes";
 import { OrderNotesPanel } from "@/components/admin/order-notes-panel";
 import { EditOrderAddress, EditOrderEmail, EditOrderPhone } from "@/components/admin/edit-order-address";
 import { APP_TIMEZONE } from "@/lib/utils/timezone";
+import { wpAdmin } from "@/lib/woo/admin-links";
+import { isFedEx2Day } from "@/lib/orders/shipping-method";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -333,6 +335,17 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                         <span className="ml-1"> · Paid on {fmtDateTime(order.updatedAt)}</span>
                       )}
                     </p>
+                    {order.wooOrderId ? (
+                      <a href={wpAdmin.editOrder(order.wooOrderId)} target="_blank" rel="noreferrer"
+                        className="inline-block mt-1.5 text-xs font-medium text-[#3DBFA4] hover:underline">
+                        WooCommerce order #{order.wooOrderId} ↗
+                      </a>
+                    ) : order.wooSyncStatus ? (
+                      <p className="mt-1.5 text-xs text-amber-700">
+                        Not in WooCommerce yet; it is retried automatically.
+                        {order.wooSyncError && <span className="text-amber-600"> Last error: {order.wooSyncError}</span>}
+                      </p>
+                    ) : null}
                   </div>
                   {/* <span className={`inline-flex px-2.5 py-1 border rounded-full text-xs font-semibold ${statusStyle[order.status]}`}>
                     {order.status.charAt(0) + order.status.slice(1).toLowerCase()}
@@ -775,7 +788,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               <div className="p-4">
                 {order.shippingMethod && (
                   <div className={`flex items-center gap-2 rounded-lg px-3 py-2 mb-3 text-xs font-medium ${
-                    order.shippingMethod.includes("FedEx 2Day")
+                    isFedEx2Day(order.shippingMethod)
                       ? "bg-orange-50 text-orange-700 border border-orange-200"
                       : "bg-gray-50 text-gray-600 border border-gray-200"
                   }`}>

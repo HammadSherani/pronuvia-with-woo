@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateSalesRepProfile, type ProfileState } from "@/actions/sales-rep/profile";
 import { AddressFields, migrateAddressData, type AddressData, EMPTY_ADDRESS } from "@/components/shared/address-fields";
 import { formatDateLong } from "@/lib/utils/timezone";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 type Rep = {
   firstName: string; lastName: string; name: string; email: string;
@@ -164,6 +165,8 @@ function ViewMode({ r, onEdit }: { r: Rep; onEdit: () => void }) {
 
 function EditMode({ r, onCancel }: { r: Rep; onCancel: () => void }) {
   const [state, action, pending] = useActionState<ProfileState, FormData>(updateSalesRepProfile, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(action);
   const router = useRouter();
 
   const [accNum,       setAccNum]       = useState(r.bankAccountNumber ?? "");
@@ -195,7 +198,7 @@ function EditMode({ r, onCancel }: { r: Rep; onCancel: () => void }) {
   }, [state, onCancel, router]);
 
   return (
-    <form action={action} className="space-y-8">
+    <form onSubmit={submitKeepingValues} className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

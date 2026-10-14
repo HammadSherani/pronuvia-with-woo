@@ -1,12 +1,9 @@
-import { FormCard } from "@/components/admin/form-card";
-import { CategoryForm } from "./_components/category-form";
+import { redirect } from "next/navigation";
+import { requireAdmin } from "@/lib/auth/dal";
+import { wpAdmin } from "@/lib/woo/admin-links";
 
-export const metadata = { title: "Add Category – Pronuvia Admin" };
-
-export default function NewCategoryPage() {
-  return (
-    <FormCard title="Add New Category" backHref="/admin/categories">
-      <CategoryForm />
-    </FormCard>
-  );
+// Categories are managed in WooCommerce now
+export default async function Page() {
+  await requireAdmin();
+  redirect(wpAdmin.categories());
 }

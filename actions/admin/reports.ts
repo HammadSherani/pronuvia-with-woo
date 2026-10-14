@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { requireAdmin } from "@/lib/auth/dal";
+import { getAdminProducts } from "@/lib/woo/catalog";
 import { parseDateOnlyInTZ, parseDateOnlyEndOfDayInTZ, toDateInputValue } from "@/lib/utils/timezone";
 
 export type ReportFilters = {
@@ -66,11 +67,15 @@ export async function getReportFilterOptions() {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    prisma.product.findMany({
-      where:   { status: "ACTIVE" },
-      select:  { id: true, title: true },
-      orderBy: { title: "asc" },
-    }),
+    // Product list comes from WooCommerce; the report still works without it
+    getAdminProducts()
+      .then((list) => list
+        .filter((p) => p.status === "ACTIVE")
+        .sort((a, b) => a.title.localeCompare(b.title)))
+      .catch((e) => {
+        console.error("[reports] WooCommerce products failed:", e);
+        return [];
+      }),
   ]);
   return {
     doctors:   doctors.map(d => ({ id: d.id, name: ` ${d.firstName} ${d.lastName}` })),

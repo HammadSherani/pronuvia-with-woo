@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { requireAdmin } from "@/lib/auth/dal";
+import { addWooOrderNote, deleteWooOrderNote, getWooOrderNotes } from "@/lib/woo/orders";
+
+// Notes of orders that are in WooCommerce are Woo order notes (ids "woo:123"),
+// including the ones Woo writes itself (stock, status changes). Older orders
+// keep their notes here. A customer note is also emailed to the patient below.
+const WOO_PREFIX = "woo:";
 
 export type NoteType = "private" | "customer";
 
@@ -15,13 +21,29 @@ export type OrderNoteRow = {
 
 export async function getOrderNotes(orderId: string): Promise<OrderNoteRow[]> {
   await requireAdmin();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const notes = await (prisma as any).orderNote.findMany({
-    where:   { orderId },
-    orderBy: { createdAt: "asc" },
-    select:  { id: true, type: true, content: true, createdAt: true },
-  });
-  return notes as OrderNoteRow[];
+  const [order, local] = await Promise.all([
+    prisma.order.findUnique({ where: { id: orderId }, select: { wooOrderId: true } }),
+    prisma.orderNote.findMany({
+      where:   { orderId },
+      orderBy: { createdAt: "asc" },
+      select:  { id: true, type: true, content: true, createdAt: true },
+    }),
+  ]);
+  if (!order?.wooOrderId) return local;
+
+  try {
+    const woo = await getWooOrderNotes(order.wooOrderId);
+    const rows: OrderNoteRow[] = woo.map((n) => ({
+      id:        `${WOO_PREFIX}${n.id}`,
+      type:      n.customer_note ? "customer" : "private",
+      content:   n.note.replace(/<[^>]*>/g, ""),
+      createdAt: new Date(`${n.date_created_gmt}Z`),
+    }));
+    return [...local, ...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  } catch (e) {
+    console.error("[order-notes] WooCommerce notes could not be loaded:", e);
+    return local;
+  }
 }
 
 export async function addOrderNote(
@@ -34,10 +56,17 @@ export async function addOrderNote(
   const trimmed = content.trim();
   if (!trimmed) return { success: false, message: "Note cannot be empty." };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (prisma as any).orderNote.create({
-    data: { orderId, type, content: trimmed },
-  });
+  const target = await prisma.order.findUnique({ where: { id: orderId }, select: { wooOrderId: true } });
+  if (!target) return { success: false, message: "Order not found." };
+  if (target.wooOrderId) {
+    try {
+      await addWooOrderNote(target.wooOrderId, trimmed, type === "customer");
+    } catch (e) {
+      return { success: false, message: `WooCommerce did not save the note: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  } else {
+    await prisma.orderNote.create({ data: { orderId, type, content: trimmed } });
+  }
 
   if (type === "customer") {
     const order = await prisma.order.findUnique({
@@ -128,8 +157,18 @@ export async function deleteOrderNote(
   orderId: string,
 ): Promise<{ success: boolean }> {
   await requireAdmin();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (prisma as any).orderNote.delete({ where: { id: noteId } });
+  if (noteId.startsWith(WOO_PREFIX)) {
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { wooOrderId: true } });
+    if (!order?.wooOrderId) return { success: false };
+    try {
+      await deleteWooOrderNote(order.wooOrderId, Number(noteId.slice(WOO_PREFIX.length)));
+    } catch (e) {
+      console.error("[order-notes] WooCommerce note not deleted:", e);
+      return { success: false };
+    }
+  } else {
+    await prisma.orderNote.delete({ where: { id: noteId, orderId } });
+  }
   revalidatePath(`/admin/orders/${orderId}`);
   return { success: true };
 }

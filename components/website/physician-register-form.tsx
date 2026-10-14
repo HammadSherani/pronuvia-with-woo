@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { Country, State } from "country-state-city";
 import toast from "react-hot-toast";
 import { registerPhysician, type RegisterPhysicianState } from "@/actions/website/register-physician";
+import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 const ALL_COUNTRIES = Country.getAllCountries();
 
@@ -27,6 +28,8 @@ function Field({ label, req = true, error, children }: { label: string; req?: bo
 
 export function PhysicianRegisterForm() {
   const [state, action, pending] = useActionState<RegisterPhysicianState, FormData>(registerPhysician, undefined);
+  // Keeps typed values on screen when the server returns an error
+  const submitKeepingValues = useKeepValuesSubmit(action, handleSubmit);
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [customSpecialty, setCustomSpecialty] = useState("");
   const [terms, setTerms] = useState(false);
@@ -142,7 +145,7 @@ export function PhysicianRegisterForm() {
   }
 
   return (
-    <form action={action} onSubmit={handleSubmit} className="space-y-5" noValidate>
+    <form onSubmit={submitKeepingValues} className="space-y-5" noValidate>
       <input type="hidden" name="fieldsOfSpeciality" value={JSON.stringify(specialties)} />
 
       {state?.message && !state.success && (

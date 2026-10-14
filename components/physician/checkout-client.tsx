@@ -3,7 +3,6 @@
 import {
   useState,
   useEffect,
-  useTransition,
   forwardRef,
   useImperativeHandle,
   useRef,
@@ -22,14 +21,11 @@ import { stripePromise } from "@/lib/stripe/client";
 import { useCart } from "@/lib/cart/cart-context";
 import { confirmPhysicianCardOrder }  from "@/actions/physician/confirm-card-order";
 import { payWithPhysicianWallet }     from "@/actions/physician/wallet-pay";
-import { validateCoupon }            from "@/actions/checkout/validate-coupon";
-import { getShippingOptionsForCountry } from "@/lib/shipping/calculate";
+import { useCheckoutQuote, checkoutSubmission, type CheckoutPayload } from "@/lib/checkout/use-checkout-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
 import { formatCurrency } from "@/lib/utils/currency";
-
-type ShippingOption = { id: string; method: string; label: string; cost: number };
 
 function hasAddr(a: AddressData) {
   return !!(a.firstName || a.address1 || a.city);
@@ -39,31 +35,23 @@ function addrToString(a: AddressData): string {
   return serializeAddress(a);
 }
 
-type AppliedCoupon = { couponId: string; code: string; discountAmount: number };
-
 type StripeHandle = { submit: () => void };
 
 const StripeInnerForm = forwardRef<StripeHandle, {
-  itemsJson:        string;
-  billingAddress:   string;
+  // What to buy; null until the server quote is ready
+  checkout:         CheckoutPayload | null;
   // Structured billing address, passed to Stripe as payment_method_data so
   // the card form's country/ZIP match our own form instead of defaulting to US.
   billingAddressData: AddressData;
-  shippingAddress:  string;
-  notes:            string;
   total:            number;
-  shippingRate:     number;
-  shippingMethod?:  string;
   customerEmail:    string;
-  customerPhone?:   string;
-  couponId?:        string;
-  couponCode?:      string;
-  discountAmount?:  number;
   onSuccess:        (orderNumber: string) => void;
   onProcessing:     (v: boolean) => void;
   onError:          (msg: string) => void;
   onStripeReady:    () => void;
-}>(function StripeInnerForm({ itemsJson, billingAddress, billingAddressData, shippingAddress, notes, total, shippingRate, shippingMethod, customerEmail, customerPhone, couponId, couponCode, discountAmount, onSuccess, onProcessing, onError, onStripeReady }, ref) {
+  // The server priced the order differently (prices or shipping changed)
+  onQuoteChanged:   () => void;
+}>(function StripeInnerForm({ checkout, billingAddressData, total, customerEmail, onSuccess, onProcessing, onError, onStripeReady, onQuoteChanged }, ref) {
   const stripe   = useStripe();
   const elements = useElements();
   const [elementsReady, setElementsReady] = useState(false);
@@ -75,7 +63,7 @@ const StripeInnerForm = forwardRef<StripeHandle, {
   }, [elements, total]);
 
   const handlePay = async () => {
-    if (!stripe || !elements) return;
+    if (!stripe || !elements || !checkout) return;
     onProcessing(true);
     onError("");
 
@@ -87,26 +75,25 @@ const StripeInnerForm = forwardRef<StripeHandle, {
       return;
     }
 
-    // Save order data before potential redirect (e.g. PayPal)
-    sessionStorage.setItem("ph_order", JSON.stringify({
-      itemsJson, billingAddress, shippingAddress, notes,
-      shippingRate, shippingMethod, total, customerEmail, customerPhone, couponId, couponCode, discountAmount,
-    }));
+    // Lets the order be finished after a redirect back from the bank
+    sessionStorage.setItem("ph_order", "1");
 
-    // 2. Create PaymentIntent with the final amount
+    // 2. The server prices the order in WooCommerce and creates a
+    // PaymentIntent for that total (never an amount from the browser)
     let clientSecret: string;
     try {
       const resp = await fetch("/api/checkout/physician-payment-intent", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ amountInCents: Math.round(total * 100) }),
+        body:    JSON.stringify({ checkout }),
       });
-      const data = await resp.json() as { clientSecret?: string };
-      if (!data.clientSecret) throw new Error("No clientSecret");
+      const data = await resp.json() as { clientSecret?: string; error?: string; code?: string };
+      if (data.code === "total_changed" || data.code === "rate_changed") onQuoteChanged();
+      if (!data.clientSecret) throw new Error(data.error || "Could not initialize payment. Please try again.");
       clientSecret = data.clientSecret;
-    } catch {
+    } catch (err) {
       sessionStorage.removeItem("ph_order");
-      onError("Could not initialize payment. Please try again.");
+      onError(err instanceof Error ? err.message : "Could not initialize payment. Please try again.");
       onProcessing(false);
       return;
     }
@@ -148,11 +135,7 @@ const StripeInnerForm = forwardRef<StripeHandle, {
     }
     if (paymentIntent?.status === "succeeded") {
       sessionStorage.removeItem("ph_order");
-      const result = await confirmPhysicianCardOrder({
-        paymentIntentId: paymentIntent.id,
-        itemsJson, billingAddress, shippingAddress, notes,
-        shippingRate, shippingMethod, total, customerEmail, customerPhone, couponId, couponCode, discountAmount,
-      });
+      const result = await confirmPhysicianCardOrder({ paymentIntentId: paymentIntent.id });
       if (result.success && result.orderNumber) {
         onSuccess(result.orderNumber);
       } else {
@@ -215,29 +198,15 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
   const [sameAsBilling, setSameAsBilling] = useState(true);
 
   // Shipping options
-  const [shippingOptions,    setShippingOptions]    = useState<ShippingOption[]>([]);
-  const [selectedShipping,   setSelectedShipping]   = useState<ShippingOption | null>(null);
-  const [loadingShipping,    setLoadingShipping]    = useState(false);
-
-  // Fetch shipping options when country changes
-  useEffect(() => {
-    if (!shipping.country) {
-      setShippingOptions([]);
-      setSelectedShipping(null);
-      return;
-    }
-    setLoadingShipping(true);
-    getShippingOptionsForCountry(shipping.country, shipping.state || undefined)
-      .then((opts) => {
-        setShippingOptions(opts);
-        setSelectedShipping(opts.length > 0 ? opts[0] : null);
-      })
-      .catch(() => {
-        setShippingOptions([]);
-        setSelectedShipping(null);
-      })
-      .finally(() => setLoadingShipping(false));
-  }, [shipping.country, shipping.state]);
+  const {
+    options:     shippingOptions,
+    selected:    selectedShipping,
+    setSelected: setSelectedShipping,
+    loading:     loadingShipping,
+    error:       shippingError,
+    retry:       retryShipping,
+    totals, coupon: appliedCoupon, couponError, couponPending, applyCoupon, removeCoupon,
+  } = useCheckoutQuote(items, shipping);
 
 
   const [notes,          setNotes]          = useState("");
@@ -247,35 +216,35 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
   const [cardProcessing, setCardProcessing] = useState(false);
 
   const [couponInput,   setCouponInput]   = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
-  const [couponError,   setCouponError]   = useState("");
-  const [couponPending, startCoupon]      = useTransition();
 
   const stripeRef    = useRef<StripeHandle>(null);
   const walletFormRef = useRef<HTMLFormElement>(null);
   const [payMethod,    setPayMethod]    = useState<"CARD" | "WALLET">("CARD");
   const [walletState, walletFormAction, walletPending] = useActionState(payWithPhysicianWallet, undefined);
 
-  const subtotal       = parseFloat(items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2));
-  const discountAmount = appliedCoupon?.discountAmount ?? 0;
-  const shippingCost   = selectedShipping?.cost ?? 0;
-  const total          = parseFloat(Math.max(0, subtotal - discountAmount + shippingCost).toFixed(2));
-  const canWallet      = walletBalance > 0 && walletBalance >= total && total > 0;
+  const subtotal       = totals?.subtotal ?? parseFloat(items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2));
+  const total          = totals?.total ?? 0;
+  // While the total is being worked out, keep the wallet choice as it is
+  const canWallet      = walletBalance > 0 && (!totals || (walletBalance >= total && total > 0));
 
-
-  const itemsJson = JSON.stringify(items.map((i) => ({
-    productId:   i.productId,
-    title:       i.productTitle,
-    variantSize: i.variantSize,
-    sku:         i.variantSku,
-    unitPrice:   i.unitPrice,
-    quantity:    i.quantity,
-    lineTotal:   parseFloat((i.unitPrice * i.quantity).toFixed(2)),
-  })));
 
   const effectiveBilling = sameAsBilling ? shipping : billing;
   const shipStr = addrToString(shipping);
   const billStr = addrToString(effectiveBilling);
+
+  // What the server prices and places. The only amount is the total shown,
+  // so the server can refuse to charge anything different.
+  const checkout: CheckoutPayload | null = totals && selectedShipping ? checkoutSubmission({
+    items,
+    shippingAddress: shipStr,
+    billingAddress:  billStr,
+    shippingRateId:  selectedShipping.id,
+    couponCode:      appliedCoupon?.code ?? null,
+    notes,
+    customerEmail:   email,
+    customerPhone:   phone,
+    expectedTotal:   totals.total,
+  }) : null;
 
   const handleCardSuccess = (orderNumber: string) => {
     toast.success("Order placed successfully!");
@@ -290,18 +259,12 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
     const status = params.get("redirect_status");
     if (!piId || status !== "succeeded") return;
 
-    const saved = sessionStorage.getItem("ph_order");
-    if (!saved) return;
-    const data = JSON.parse(saved) as {
-      itemsJson: string; billingAddress: string; shippingAddress: string;
-      notes: string; shippingRate: number; shippingMethod?: string; total: number; customerEmail: string; customerPhone?: string;
-      couponId?: string; couponCode?: string; discountAmount?: number;
-    };
+    if (!sessionStorage.getItem("ph_order")) return;
     sessionStorage.removeItem("ph_order");
     window.history.replaceState({}, "", window.location.pathname);
 
     setCardProcessing(true);
-    confirmPhysicianCardOrder({ paymentIntentId: piId, ...data }).then((r) => {
+    confirmPhysicianCardOrder({ paymentIntentId: piId }).then((r) => {
       if (r.success && r.orderNumber) handleCardSuccess(r.orderNumber);
       else { setStripeError(r.message ?? "Order creation failed."); setCardProcessing(false); }
     });
@@ -316,29 +279,27 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
       router.push(`/physician/invoice/${walletState.orderNumber}`);
     } else if (!walletState.success && walletState.message) {
       toast.error(walletState.message);
+      // Prices, shipping or the coupon may have changed: show the new totals
+      retryShipping();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletState]);
 
   const handleApplyCoupon = () => {
-    setCouponError("");
-    startCoupon(async () => {
-      const res = await validateCoupon(couponInput, "PHYSICIAN", subtotal);
-      if (res.valid) {
-        setAppliedCoupon({ couponId: res.couponId, code: res.code, discountAmount: res.discountAmount });
-        setCouponInput("");
-        toast.success(res.message);
-      } else {
-        setCouponError(res.message);
-      }
-    });
+    if (!couponInput.trim()) return;
+    applyCoupon(couponInput);
+    setCouponInput("");
   };
 
   const handlePlaceOrder = () => {
     if (!email.trim()) { toast.error("Please enter the patient's email address."); return; }
     if (!hasAddr(shipping)) { toast.error("Please enter a shipping address."); return; }
-    if (shippingOptions.length > 0 && !selectedShipping) {
-      toast.error("Please select a shipping method.");
+    if (!selectedShipping) {
+      toast.error(loadingShipping ? "Shipping rates are still loading." : shippingOptions.length > 0 ? "Please select a shipping method." : "Shipping is not available for this address.");
+      return;
+    }
+    if (!checkout) {
+      toast.error("The order total is still being calculated.");
       return;
     }
     if (payMethod === "WALLET") {
@@ -436,9 +397,16 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
                   <span className="w-4 h-4 border-2 border-gray-200 border-t-[#3DBFA4] rounded-full animate-spin" />
                   Loading shipping options…
                 </div>
+              ) : shippingError ? (
+                <div className="flex items-center justify-between gap-3 border border-red-200 bg-red-50 rounded px-4 py-3 text-sm text-red-700">
+                  <span>{shippingError}</span>
+                  <button type="button" onClick={retryShipping} className="shrink-0 font-semibold underline hover:no-underline">
+                    Try again
+                  </button>
+                </div>
               ) : shippingOptions.length === 0 ? (
                 <div className="border border-amber-200 bg-amber-50 rounded px-4 py-3 text-sm text-amber-700">
-                  No shipping options available for {shipping.countryName}. Please contact us.
+                  No shipping available to this address{shipping.countryName ? ` in ${shipping.countryName}` : ""}. Please contact us.
                 </div>
               ) : (
                 <div className="border border-gray-300 rounded divide-y divide-gray-100">
@@ -533,23 +501,15 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
                     >
                       <StripeInnerForm
                         ref={stripeRef}
-                        itemsJson={itemsJson}
-                        billingAddress={billStr}
+                        checkout={checkout}
                         billingAddressData={effectiveBilling}
-                        shippingAddress={shipStr}
-                        notes={notes}
                         total={total}
-                        shippingRate={shippingCost}
-                        shippingMethod={selectedShipping?.label}
                         customerEmail={email}
-                        customerPhone={phone || undefined}
-                        couponId={appliedCoupon?.couponId}
-                        couponCode={appliedCoupon?.code}
-                        discountAmount={discountAmount}
                         onSuccess={handleCardSuccess}
                         onProcessing={setCardProcessing}
                         onError={(msg) => { setStripeError(msg); if (msg) toast.error(msg); }}
                         onStripeReady={() => setPaymentReady(true)}
+                        onQuoteChanged={retryShipping}
                       />
                     </Elements>
                   </div>
@@ -575,22 +535,7 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
                   </p>
                 )}
                 <form ref={walletFormRef} action={walletFormAction} className="hidden">
-                  <input type="hidden" name="items"           value={itemsJson} />
-                  <input type="hidden" name="shippingAddress" value={shipStr} />
-                  <input type="hidden" name="billingAddress"  value={billStr} />
-                  <input type="hidden" name="shippingRate"    value={String(shippingCost)} />
-                  <input type="hidden" name="shippingMethod"  value={selectedShipping?.label ?? ""} />
-                  <input type="hidden" name="total"           value={String(total)} />
-                  <input type="hidden" name="customerEmail"   value={email} />
-                  {phone && <input type="hidden" name="customerPhone" value={phone} />}
-                  {notes && <input type="hidden" name="notes" value={notes} />}
-                  {appliedCoupon && (
-                    <>
-                      <input type="hidden" name="couponCode"     value={appliedCoupon.code} />
-                      <input type="hidden" name="couponId"       value={appliedCoupon.couponId} />
-                      <input type="hidden" name="discountAmount" value={String(appliedCoupon.discountAmount)} />
-                    </>
-                  )}
+                  <input type="hidden" name="checkout" value={checkout ? JSON.stringify(checkout) : ""} />
                 </form>
               </div>
             )}
@@ -616,7 +561,7 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
           </p>
 
           <button type="button" onClick={handlePlaceOrder}
-            disabled={cardProcessing || walletPending || !email.trim() || !hasAddr(shipping)}
+            disabled={cardProcessing || walletPending || !email.trim() || !hasAddr(shipping) || !selectedShipping || !checkout}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-bold rounded transition-colors">
             {(cardProcessing || walletPending) ? (
               <span className="flex items-center justify-center gap-2">
@@ -672,10 +617,10 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
                       </svg>
                       <div>
                         <span className="text-xs font-bold text-emerald-700 font-mono">{appliedCoupon.code}</span>
-                        <span className="text-xs text-emerald-600 ml-1">— −{formatCurrency(appliedCoupon.discountAmount)}</span>
+                        <span className="text-xs text-emerald-600 ml-1">— −{formatCurrency(appliedCoupon.discount)}</span>
                       </div>
                     </div>
-                    <button type="button" onClick={() => setAppliedCoupon(null)}
+                    <button type="button" onClick={removeCoupon}
                       className="text-xs text-emerald-600 hover:text-emerald-800 underline shrink-0">
                       Remove
                     </button>
@@ -686,7 +631,7 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
                       <input
                         type="text" placeholder="Coupon code"
                         value={couponInput}
-                        onChange={(e) => { setCouponInput(e.target.value.toUpperCase()); setCouponError(""); }}
+                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
                         onKeyDown={(e) => e.key === "Enter" && handleApplyCoupon()}
                         className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 font-mono placeholder:font-sans placeholder:text-gray-400"
                       />
@@ -708,7 +653,13 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
                 {appliedCoupon && (
                   <div className="flex justify-between text-emerald-600 font-medium">
                     <span>Coupon ({appliedCoupon.code})</span>
-                    <span>−{formatCurrency(appliedCoupon.discountAmount)}</span>
+                    <span>−{formatCurrency(appliedCoupon.discount)}</span>
+                  </div>
+                )}
+                {!!totals?.tax && (
+                  <div className="flex justify-between">
+                    <span>Tax</span>
+                    <span>{formatCurrency(totals.tax)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -729,7 +680,11 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
               <div className="px-4 py-4">
                 <div className="flex justify-between text-base font-bold text-gray-900">
                   <span>Total</span>
-                  <span>{formatCurrency(total)}</span>
+                  {totals ? (
+                    <span>{formatCurrency(total)}</span>
+                  ) : (
+                    <span className="text-gray-400 italic text-xs font-normal">Calculating…</span>
+                  )}
                 </div>
               </div>
             </div>

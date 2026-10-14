@@ -13,6 +13,7 @@ import { physicianApprovalEmail, salesRepPhysicianAssignedEmail } from "@/lib/em
 import { doctorRegistrationEmail } from "@/lib/email/templates";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
+import { scheduleWooCustomerSync } from "@/lib/woo/customers";
 
 export type PhysicianActionState = {
   errors?:  Record<string, string[]>;
@@ -140,6 +141,9 @@ export async function adminCreatePhysician(
     if (field === "email")   return { errors: { email: ["A physician with this email already exists."] }, values: strValues };
     throw err;
   }
+
+  // Creates the Woo customer only when the physician is APPROVED
+  scheduleWooCustomerSync("PHYSICIAN", createdPhysicianId);
 
   // Registration confirmation for PENDING accounts (approval email covers the APPROVED path)
   if (isApproved === ApprovalStatus.PENDING) {
@@ -292,6 +296,8 @@ export async function updatePhysician(
     if (field === "email")   return { errors: { email: ["This email is already in use."] } };
     throw err;
   }
+
+  scheduleWooCustomerSync("PHYSICIAN", id);
 
   revalidatePath("/admin/physicians");
   revalidatePath(`/admin/physicians/${id}`);

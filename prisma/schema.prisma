@@ -61,6 +61,9 @@ model SalesRepresentative {
   swiftCode             String?
   routingNumber         String?
   bankNotifyRequested   Boolean  @default(false)
+  // Linked WooCommerce customer (set by lib/woo/customers.ts). Not @unique:
+  // MongoDB unique indexes treat every missing value as a duplicate.
+  wooCustomerId         Int?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -69,66 +72,6 @@ model SalesRepresentative {
 
   physicians  PartneringPhysician[]
   orderItems  Order[]
-}
-
-model Category {
-  id            String        @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  slug          String        @unique
-  description   String?
-  isActive      Boolean       @default(true)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  subCategories SubCategory[]
-  products      Product[]
-}
-
-model SubCategory {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  slug        String    @unique
-  description String?
-  isActive    Boolean   @default(true)
-  categoryId  String    @db.ObjectId
-  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  products    Product[]
-}
-
-enum ProductStatus {
-  DRAFT
-  ACTIVE
-  ARCHIVED
-}
-
-model Product {
-  id             String        @id @default(auto()) @map("_id") @db.ObjectId
-  title          String
-  slug           String        @unique
-  description    String?
-  image          String?
-  imageGallery   String[]
-  salePrice      Float
-  costPrice      Float
-  compareAtPrice Float?
-  quantity       Int           @default(0)
-  discount       Float         @default(0)
-  sku            String        @unique
-  gtin           String?
-  weight         Float?
-  weightUnit     String        @default("kg")
-  tags           String[]
-  variants       Json[]
-  status         ProductStatus @default(ACTIVE)
-  categoryId     String?       @db.ObjectId
-  subCategoryId  String?       @db.ObjectId
-  category       Category?     @relation(fields: [categoryId], references: [id])
-  subCategory    SubCategory?  @relation(fields: [subCategoryId], references: [id])
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
 }
 
 model PartneringPhysician {
@@ -176,6 +119,8 @@ model PartneringPhysician {
   routingNumber         String?
   bankNotifyRequested   Boolean        @default(false)
   walletBalance         Float          @default(0)
+  // Linked WooCommerce customer, created once the physician is APPROVED
+  wooCustomerId         Int?
   ordersCount         Int            @default(0)
   addedByRole         Role
   addedByAdminId      String?        @db.ObjectId
@@ -250,6 +195,20 @@ model Order {
   couponCode                String?
   couponId                  String?              @db.ObjectId
   discountAmount            Float                @default(0)
+  // Tax WooCommerce charged (items + shipping); null on orders before Phase 5
+  taxAmount                 Float?
+
+  // The WooCommerce order this order was sent to (Phase 6). Orders are saved
+  // here first (with any wallet debit), then created in Woo:
+  // PENDING_SYNC → SYNCING → SYNCED. A failed send goes back to PENDING_SYNC
+  // and is retried by /api/cron/woo-order-sync. Null on orders before Phase 6.
+  wooOrderId                Int?
+  wooSyncStatus             String?
+  wooSyncError              String?
+  wooSyncAttempts           Int?
+  wooSyncAt                 DateTime?
+  // Woo rate id of the shipping option, e.g. "flat_rate:9"
+  shippingRateId            String?
 
   customerEmail             String?
   customerPhone             String?
@@ -278,26 +237,47 @@ model OrderRefund {
   salesRepClawback  Float    @default(0)
   physicianClawback Float    @default(0)
   reason               String?
-  customerRefundMethod String?  // "manual" | "stripe"
+  customerRefundMethod String?  // "manual" | "stripe" | "wallet"
   customerRefundAmount Float?
   stripeRefundId       String?
+  // The matching WooCommerce refund (Phase 9). Refunds made here create it;
+  // refunds made in WP admin are imported with it (one record per Woo refund).
+  wooRefundId          Int?
+  source               String?  // "pronuvia" | "woocommerce"; null before Phase 9
   processedAt          DateTime @default(now())
 }
 
-model Coupon {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  code           String    @unique
-  description    String?
-  discountType   String    @default("PERCENTAGE")
-  discountValue  Float
-  minOrderAmount Float?
-  maxUses        Int?
-  usedCount      Int       @default(0)
-  expiresAt      DateTime?
-  isActive       Boolean   @default(true)
-  applicableTo   String    @default("ALL")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+// The server-side price of a card checkout, saved when its Stripe
+// PaymentIntent is created (the PaymentIntent's amount is this total). The
+// order is built from this once the payment succeeds, never from the browser.
+model CheckoutQuote {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   // who is paying: the rep, the physician, or the admin ordering on behalf
+  physicianId String?  // admin "order on behalf": the physician the order is for
+  order       Json     // PricedOrder from lib/checkout/price-order.ts
+  total       Float
+  createdAt   DateTime @default(now())
+}
+
+// A shipping label bought with the WooCommerce Shipping plugin (WP admin),
+// read from the Woo order's `wcshipping_labels` meta. Kept here so each
+// label's tracking email goes out once and the order lists show tracking.
+// Labels bought with the old custom FedEx / UPS / USPS code stay in Shipment.
+model WooLabel {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  orderId     String    @db.ObjectId
+  labelId     Int                       // the plugin's label id
+  tracking    String
+  carrier     String                    // usps, ups, fedex, dhlexpress
+  service     String
+  packageName String?
+  isReturn    Boolean   @default(false)
+  refunded    Boolean   @default(false)
+  purchasedAt DateTime
+  notifiedAt  DateTime?                 // tracking email sent
+  createdAt   DateTime  @default(now())
+
+  @@unique([orderId, labelId])
 }
 
 model Shipment {
@@ -327,6 +307,13 @@ model Shipment {
   status         String   @default("created")
   shipDate       DateTime @default(now())
   createdAt      DateTime @default(now())
+}
+
+// Sequences that must never hand out a number twice (an order number can
+// otherwise come back after the newest order is deleted).
+model Counter {
+  id    String @id @map("_id")   // e.g. "orderNumber"
+  value Int
 }
 
 model OrderNote {
@@ -426,21 +413,6 @@ enum ShippingMethod {
   FREE
   LOCAL_PICKUP
   FEDEX_2DAY
-}
-
-model ShippingRate {
-  id          String         @id @default(auto()) @map("_id") @db.ObjectId
-  continent   String
-  country     String         // ISO 2-letter code e.g. "US"
-  countryName String         // Full name e.g. "United States"
-  // empty = country-wide rule; populated = applies only to these state codes
-  states      String[]
-  stateNames  String[]
-  method      ShippingMethod
-  cost        Float          @default(0)
-  isActive    Boolean        @default(true)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
 }
 
 enum EmailLogStatus {

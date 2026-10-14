@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Country } from "country-state-city";
 import { requireSalesRep } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db/prisma";
+import { refreshOrderFromWoo } from "@/lib/orders/order-woo";
 import { PrintButton } from "@/components/sales/print-button";
 import { formatDate, formatDateLong } from "@/lib/utils/timezone";
 
@@ -70,6 +71,11 @@ const STATUS_STYLES: Record<string, string> = {
 export default async function InvoicePage({ params }: Props) {
   const session = await requireSalesRep();
   const { orderNumber } = await params;
+
+  // Only the owner's order is brought up to date with WP admin changes
+  const owner = await prisma.order.findUnique({ where: { orderNumber }, select: { salesRepId: true } });
+  if (!owner || owner.salesRepId !== session.userId) notFound();
+  await refreshOrderFromWoo({ orderNumber });
 
   const order = await prisma.order.findUnique({
     where:  { orderNumber },

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
@@ -7,17 +7,23 @@ import { useCart } from "@/lib/cart/cart-context";
 import { formatCurrency } from "@/lib/utils/currency";
 
 type VariantStatus = "in_stock" | "out_of_stock" | "discontinued" | "inactive";
-type Variant  = { size?: string; salePrice?: number; stock?: number; sku?: string; status?: VariantStatus; isDefault?: boolean };
+type Variant  = { size?: string; salePrice?: number; stock?: number; sku?: string; status?: VariantStatus; isDefault?: boolean; variationId?: number | null };
 
 function variantStatus(v: Variant): VariantStatus { return v.status ?? "in_stock"; }
 function isAvailable(v: Variant) { return variantStatus(v) === "in_stock"; }
 function isVisible(v: Variant)   { return variantStatus(v) !== "inactive"; }
+// Largest numeric size first ("250ml" before "120ml"); labels that aren't
+// numbers ("Small / Navy") keep the order WooCommerce returned them in.
+function bySizeDesc(a: Variant, b: Variant) {
+  const x = parseFloat(a.size ?? ""), y = parseFloat(b.size ?? "");
+  return isNaN(x) || isNaN(y) ? 0 : y - x;
+}
 type Product  = { id: string; title: string; slug: string; image: string | null; salePrice: number; variants: unknown[]; category: { id: string; name: string } | null; status: string };
 type Category = { id: string; name: string };
 
 function ProductCard({ product, basePath }: { product: Product; basePath: string }) {
   const allVariants = product.variants as Variant[];
-  const variants    = allVariants.filter(isVisible).sort((a, b) => parseFloat(b.size ?? "0") - parseFloat(a.size ?? "0"));
+  const variants    = allVariants.filter(isVisible).sort(bySizeDesc);
   const { addItem, items, updateQty, removeItem, isReady } = useCart();
 
   const defaultIdx        = variants.findIndex((v) => v.isDefault);
@@ -60,6 +66,7 @@ function ProductCard({ product, basePath }: { product: Product; basePath: string
       productImage: product.image,
       variantSize,
       variantSku,
+      variationId: selected?.variationId ?? null,
       unitPrice,
       quantity: qty,
     });
