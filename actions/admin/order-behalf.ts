@@ -80,6 +80,7 @@ export async function confirmBehalfCardOrder(
     prisma.order.create({
       data: {
         orderNumber,
+        status: "PROCESSING",
         placedByAdmin: true,
         physicianId:  payload.physicianId,
         salesRepId:   physician?.salesRepId ?? null,
