@@ -82,7 +82,7 @@ export default async function InvoicePage({ params }: Props) {
     select: {
       id: true, orderNumber: true, createdAt: true,
       paymentMethod: true, paymentStatus: true, transactionId: true,
-      subtotal: true, total: true, shippingRate: true,
+      subtotal: true, total: true, shippingRate: true, shippingMethod: true,
       couponCode: true, discountAmount: true,
       shippingCarrier: true, trackingNumber: true,
       shippingAddress: true, billingAddress: true,
@@ -286,7 +286,7 @@ export default async function InvoicePage({ params }: Props) {
                   const display = stored > 0 ? stored : implied > 0 ? implied : 0;
                   return (
                     <div className="flex justify-between text-sm text-gray-600">
-                      <span>{getShippingLabel(order.shippingAddress, display)}</span>
+                      <span>{order.shippingMethod || getShippingLabel(order.shippingAddress, display)}</span>
                       <span>
                         {display === 0
                           ? <span className="text-[#3DBFA4] font-medium">Free</span>
