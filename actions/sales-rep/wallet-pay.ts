@@ -65,6 +65,7 @@ export async function payWithWallet(
     prisma.order.create({
       data: {
         orderNumber,
+        status: "PROCESSING",
         salesRepId: session.userId,
         items:      items as object[],
         subtotal,

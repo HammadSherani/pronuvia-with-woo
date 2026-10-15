@@ -7,7 +7,7 @@ import { OrderStatus } from "@/generated/prisma/enums";
 import { updateOrderStatus, deleteOrder } from "@/actions/admin/manage-orders";
 
 const STATUSES: { value: OrderStatus; label: string }[] = [
-  { value: "PENDING",    label: "Pending payment" },
+  { value: "PENDING",    label: "Pending" },
   { value: "PROCESSING", label: "Processing" },
   { value: "SHIPPED",    label: "Shipped" },
   { value: "DELIVERED",  label: "Delivered" },

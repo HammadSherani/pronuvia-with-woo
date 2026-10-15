@@ -80,6 +80,7 @@ export async function payWithPhysicianWallet(
     prisma.order.create({
       data: {
         orderNumber,
+        status: "PROCESSING",
         physicianId: session.userId,
         salesRepId:  physician.salesRepId ?? null,
         items:       items as object[],
