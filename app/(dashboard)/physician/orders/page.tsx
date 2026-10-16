@@ -146,7 +146,9 @@ export default async function PhysicianOrdersPage({
                   const stsCls    = statusStyle[o.status];
                   return (
                     <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-5 py-4 font-mono text-xs font-semibold text-gray-700">{o.orderNumber}</td>
+                      <td className="px-5 py-4 font-mono text-xs font-semibold text-gray-700">
+                        <Link href={`/physician/orders/${o.orderNumber}`} className="hover:text-[#3DBFA4] hover:underline">{o.orderNumber}</Link>
+                      </td>
                       <td className="px-5 py-4 text-gray-400 text-xs whitespace-nowrap">
                         {formatDate(o.createdAt)}
                       </td>
@@ -176,6 +178,10 @@ export default async function PhysicianOrdersPage({
                         </span>
                       </td>
                       <td className="px-5 py-4">
+<Link href={`/physician/orders/${o.orderNumber}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors mr-3">
+                          View
+                        </Link>
                         <Link href={`/physician/invoice/${o.orderNumber}`}
                           className="inline-flex items-center gap-1 text-xs font-medium text-[#3DBFA4] hover:text-[#35a993] transition-colors">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
