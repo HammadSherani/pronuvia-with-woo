@@ -156,7 +156,7 @@ export default async function SalesOrdersPage({
                   return (
                     <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-5 py-4 font-mono text-xs font-semibold text-gray-700">
-                        {o.orderNumber}
+                        <Link href={`/sales/orders/${o.orderNumber}`} className="hover:text-[#3DBFA4] hover:underline">{o.orderNumber}</Link>
                       </td>
                       <td className="px-5 py-4 text-gray-400 text-xs whitespace-nowrap">
                         {formatDate(o.createdAt)}
@@ -198,6 +198,10 @@ export default async function SalesOrdersPage({
                         )}
                       </td>
                       <td className="px-5 py-4">
+<Link href={`/sales/orders/${o.orderNumber}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors mr-3">
+                          View
+                        </Link>
                         <Link
                           href={`/sales/invoice/${o.orderNumber}`}
                           className="inline-flex items-center gap-1 text-xs font-medium text-[#3DBFA4] hover:text-[#35a993] transition-colors"
