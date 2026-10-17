@@ -46,6 +46,7 @@ export default async function SalesOrdersPage({
     shippingRate: true, shippingCarrier: true, trackingNumber: true,
     salesRepCommissionRate: true, salesRepCommissionAmount: true,
     status: true,
+    returnedTotal: true, salesRepClawback: true,
     paymentMethod: true, paymentStatus: true,
     transactionId: true,
     physicianId: true,
@@ -59,8 +60,11 @@ export default async function SalesOrdersPage({
 
   // Stats from all orders (not paged)
   const [totalSpent, totalCommission, paidCount] = await Promise.all([
-    prisma.order.aggregate({ where, _sum: { total: true } }).then(r => r._sum.total ?? 0),
-    prisma.order.aggregate({ where, _sum: { salesRepCommissionAmount: true } }).then(r => r._sum.salesRepCommissionAmount ?? 0),
+    // After refunds: what was kept and the commission left after clawbacks
+    prisma.order.aggregate({ where, _sum: { total: true, returnedTotal: true } })
+      .then(r => (r._sum.total ?? 0) - (r._sum.returnedTotal ?? 0)),
+    prisma.order.aggregate({ where, _sum: { salesRepCommissionAmount: true, salesRepClawback: true } })
+      .then(r => (r._sum.salesRepCommissionAmount ?? 0) - (r._sum.salesRepClawback ?? 0)),
     prisma.order.count({ where: { ...where, paymentStatus: "PAID" } }),
   ]);
 
@@ -168,7 +172,14 @@ export default async function SalesOrdersPage({
                       <td className="px-5 py-4 text-xs text-gray-500">
                         {o.shippingRate > 0 ? fmt(o.shippingRate) : <span className="text-gray-300 italic">—</span>}
                       </td>
-                      <td className="px-5 py-4 font-semibold text-gray-800">{fmt(o.total)}</td>
+                      <td className="px-5 py-4 font-semibold text-gray-800">
+                        {(o.returnedTotal ?? 0) > 0 ? (
+                          <>
+                            {fmt(o.total - (o.returnedTotal ?? 0))}
+                            <span className="block text-[11px] font-normal text-gray-400 line-through">{fmt(o.total)}</span>
+                          </>
+                        ) : fmt(o.total)}
+                      </td>
                       <td className="px-5 py-4">
                         {o.trackingNumber ? (
                           <div>
@@ -180,13 +191,21 @@ export default async function SalesOrdersPage({
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <span className="text-[#5BB8D4] font-semibold">{fmt(o.salesRepCommissionAmount)}</span>
+                        <span className="text-[#5BB8D4] font-semibold">{fmt(Math.max(0, o.salesRepCommissionAmount - (o.salesRepClawback ?? 0)))}</span>
                         <span className="text-xs text-gray-400 ml-1">({o.salesRepCommissionRate}%)</span>
+                        {(o.salesRepClawback ?? 0) > 0 && (
+                          <span className="block text-[11px] text-orange-500">−{fmt(o.salesRepClawback ?? 0)} refunded</span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <span className={`inline-flex px-2 py-0.5 border rounded-full text-xs font-medium ${stsCls}`}>
                           {o.status.charAt(0) + o.status.slice(1).toLowerCase()}
                         </span>
+                        {(o.returnedTotal ?? 0) > 0 && o.status !== "REFUNDED" && (
+                          <span className="block w-fit mt-1 px-2 py-0.5 border rounded-full text-[11px] font-medium bg-orange-50 text-orange-700 border-orange-200">
+                            Partially refunded
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         {o.physicianId ? (
