@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { updateWithdrawRequest, deleteWithdrawRequest, bulkUpdateWithdrawals } from "@/actions/admin/manage-withdrawals";
+import { updateWithdrawRequest, bulkUpdateWithdrawals } from "@/actions/admin/manage-withdrawals";
 import { notifyUserAddBank } from "@/actions/admin/notify-bank";
 import { formatDate, formatMonthYear } from "@/lib/utils/timezone";
 
@@ -372,11 +372,9 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
   const [bulkModal,    setBulkModal]   = useState(false);
   const [ordersModal,  setOrdersModal] = useState<{ name: string; period: string; orders: OrderRow[]; rejected?: boolean } | null>(null);
   const [actionModal,  setActionModal] = useState<{ row: PendingRow; action: "APPROVED" | "REJECTED" } | null>(null);
-  const [confirmDel,   setConfirmDel]  = useState<PendingRow | null>(null);
   const [pendingPage,  setPendingPage] = useState(1);
   const [currentPage,  setCurrentPage] = useState(1);
   const [rejectedPage, setRejectedPage] = useState(1);
-  const [deleting,     startDelete]    = useTransition();
   const [bulkBusy,     startBulk]     = useTransition();
   const [,             startNotify]   = useTransition();
 
@@ -417,14 +415,6 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
     });
   };
 
-  const handleDelete = (row: PendingRow) => {
-    startDelete(async () => {
-      const res = await deleteWithdrawRequest(row.id);
-      if (res?.success) { toast.success("Request removed."); removeRow(row.id); }
-      else              { toast.error(res?.message ?? "Failed."); }
-      setConfirmDel(null);
-    });
-  };
 
   const pendingTotal = pending.reduce((s, r) => s + r.amount, 0);
   const currentTotal = currentMonth.reduce((s, e) => s + e.totalCommission, 0);
@@ -618,16 +608,6 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                               </svg>
                               Reject
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDel(row)}
-                              className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Remove request"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
                             </button>
                               </>
                             )}
@@ -886,29 +866,6 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
         />
       )}
 
-      {confirmDel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-base font-bold text-gray-800 mb-1">Remove Request</h3>
-            <p className="text-sm text-gray-500 mb-5">
-              Remove the pending payout request for {confirmDel.user.firstName} {confirmDel.user.lastName}?
-              The commission balance is not affected.
-            </p>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setConfirmDel(null)} disabled={deleting}
-                className="flex-1 py-2.5 text-sm font-semibold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">
-                Cancel
-              </button>
-              <button type="button" onClick={() => handleDelete(confirmDel)} disabled={deleting}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl disabled:opacity-50 transition-colors">
-                {deleting
-                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : "Remove"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
