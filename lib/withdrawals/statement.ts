@@ -124,18 +124,21 @@ export async function getPayoutStatementOrders({
       createdAt: true,
       salesRepCommissionAmount: true,
       salesRepCommissionRate: true,
+      salesRepClawback: true,
       physicianCommissionAmount: true,
       physicianCommissionRate: true,
+      physicianClawback: true,
     },
     orderBy: { createdAt: "asc" },
   });
 
+  // What was paid: the commission less what refunds took back
   const legacyStatementOrders = legacyOrders.map((order) => ({
     orderNumber: order.orderNumber,
     createdAt: order.createdAt,
-    amount: userRole === "PHYSICIAN"
-      ? order.physicianCommissionAmount
-      : order.salesRepCommissionAmount,
+    amount: Number(Math.max(0, userRole === "PHYSICIAN"
+      ? order.physicianCommissionAmount - (order.physicianClawback ?? 0)
+      : order.salesRepCommissionAmount - (order.salesRepClawback ?? 0)).toFixed(2)),
     rate: userRole === "PHYSICIAN"
       ? order.physicianCommissionRate
       : order.salesRepCommissionRate,

@@ -14,9 +14,14 @@ import { sweepCommissionPeriod } from "@/lib/withdrawals/commission-sweep";
  * that period. Shared by the recurring monthly cron (previous-month close)
  * and any one-off manual sweep of a specific period.
  */
-export async function runPayoutSweep(period: MonthlyPayoutPeriod) {
-  const sweep = await sweepCommissionPeriod(period);
-  console.log(`[payout-sweep] ${period.key} commission sweep`, sweep);
+export async function runPayoutSweep(sweepPeriod: MonthlyPayoutPeriod) {
+  const sweep = await sweepCommissionPeriod(sweepPeriod);
+  console.log(`[payout-sweep] ${sweepPeriod.key} commission sweep`, sweep);
+
+  // The requests' snapshot is taken after the sweep: a statement lists the
+  // wallet credits up to its snapshot, so the commissions credited just now
+  // must fall inside it.
+  const period: MonthlyPayoutPeriod = { ...sweepPeriod, snapshotAt: new Date() };
 
   // Note: no bank-details filter here — an account without bank details on
   // file still needs a payout request created so it's visible to the admin
