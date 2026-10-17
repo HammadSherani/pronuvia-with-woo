@@ -26,6 +26,7 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 - [ ] REST API key (WooCommerce → Settings → Advanced → REST API): Read/Write, ek admin user ke naam
 - [ ] HPOS ON (order links `admin.php?page=wc-orders&action=edit&id=` isi par chalte hain)
 - [ ] Purana "product update" webhook (khaali delivery URL) hata dein
+- [ ] **Pronuvia SSO plugin** (dashboard se WP admin bina password): Plugins → Add New → Upload `wordpress/pronuvia-sso.zip` → Activate; `wp-config.php` mein `define( 'PRONUVIA_SSO_SECRET', '<WOO_SSO_SECRET wali value>' );`. Pronuvia admin aur WP admin user ka email ek hi ho (warna `define( 'PRONUVIA_SSO_USER', '<WP username>' );`)
 - [ ] Optional (WP developer): hamara order number WP admin mein (Sequential Order Numbers / snippet), "Shipped" status, coupon par "Kis ke liye" field
 
 ## 2. Vercel environment (Production)
@@ -39,6 +40,7 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 | `WOO_WEBHOOK_SECRET` | naya lamba random secret (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) |
 | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | **live** keys (`sk_live_`, `pk_live_`) |
 | `CRON_SECRET` | random |
+| `WOO_SSO_SECRET` | random, wahi jo `wp-config.php` ke `PRONUVIA_SSO_SECRET` mein (khaali ho to WP links password maangenge) |
 | `SENDGRID_API_KEY` (ya `SMTP_*`), `SMTP_FROM`, `MAIL_REPLY_TO` | live |
 | `PAYOUT_TIMEZONE` | jaise abhi |
 | `CLOUDINARY_*` | jaise abhi |
