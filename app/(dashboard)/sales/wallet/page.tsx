@@ -29,7 +29,13 @@ type OrderRow = {
   createdAt: Date;
   salesRepCommissionRate: number | null;
   salesRepCommissionAmount: number | null;
+  salesRepClawback: number | null;
 };
+
+// Commission left after refunds took part of it back
+function netOf(o: OrderRow): number {
+  return Math.max(0, (o.salesRepCommissionAmount ?? 0) - (o.salesRepClawback ?? 0));
+}
 
 function CommissionTable({ orders }: { orders: OrderRow[] }) {
   if (orders.length === 0) return null;
@@ -67,8 +73,14 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
             </td>
             <td className="px-5 py-4 text-right">
               <span className="text-sm font-bold text-gray-800">
-                {fmt(o.salesRepCommissionAmount ?? 0)}
+                {fmt(netOf(o))}
               </span>
+              {(o.salesRepClawback ?? 0) > 0 && (
+                <span className="block text-[11px] text-orange-500">
+                  <span className="line-through text-gray-400 mr-1">{fmt(o.salesRepCommissionAmount ?? 0)}</span>
+                  −{fmt(o.salesRepClawback ?? 0)} refunded
+                </span>
+              )}
             </td>
           </tr>
         ))}
@@ -78,7 +90,7 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
           <td colSpan={3} className="px-5 py-3 text-xs font-bold text-gray-500 text-right">Total</td>
           <td className="px-5 py-3 text-right">
             <span className="text-sm font-black text-emerald-600">
-              {fmt(orders.reduce((s, o) => s + (o.salesRepCommissionAmount ?? 0), 0))}
+              {fmt(orders.reduce((s, o) => s + netOf(o), 0))}
             </span>
           </td>
         </tr>
@@ -160,6 +172,7 @@ export default async function SalesCommissionPage() {
         commissionPaid:            true,
         salesRepCommissionRate:    true,
         salesRepCommissionAmount:  true,
+        salesRepClawback: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -180,20 +193,18 @@ export default async function SalesCommissionPage() {
 
   const hasPending = withdrawRequests.some((r) => r.status === "PENDING");
 
-  const refundedOrderIds = new Set(
-    (await prisma.orderRefund.findMany({
-      where: { orderId: { in: earningOrders.map((o) => o.id) } },
-      select: { orderId: true },
-    })).map((r) => r.orderId)
-  );
-
+  // Rejected: cancelled or refunded before the commission was paid, or its
+  // whole commission taken back by refunds. A partly refunded order stays
+  // pending / paid with the commission that is left.
   const CLOSED = new Set(["REFUNDED", "CANCELLED"]);
-  const paidOrders     = earningOrders.filter((o) => !refundedOrderIds.has(o.id) && o.commissionPaid);
-  const reversedOrders = earningOrders.filter((o) => refundedOrderIds.has(o.id) || (!o.commissionPaid && CLOSED.has(o.status)));
-  const pendingOrders  = earningOrders.filter((o) => !refundedOrderIds.has(o.id) && !o.commissionPaid && !CLOSED.has(o.status));
+  const isRejected = (o: (typeof earningOrders)[number]) =>
+    (!o.commissionPaid && CLOSED.has(o.status)) || ((o.salesRepCommissionAmount ?? 0) > 0 && netOf(o) <= 0);
+  const paidOrders     = earningOrders.filter((o) => !isRejected(o) && o.commissionPaid);
+  const reversedOrders = earningOrders.filter((o) => isRejected(o));
+  const pendingOrders  = earningOrders.filter((o) => !isRejected(o) && !o.commissionPaid);
 
-  const totalPaid     = paidOrders.reduce((s, o)     => s + (o.salesRepCommissionAmount ?? 0), 0);
-  const totalPending  = pendingOrders.reduce((s, o)  => s + (o.salesRepCommissionAmount ?? 0), 0);
+  const totalPaid     = paidOrders.reduce((s, o)     => s + netOf(o), 0);
+  const totalPending  = pendingOrders.reduce((s, o)  => s + netOf(o), 0);
   const totalWithdrawn = await prisma.withdrawRequest.aggregate({
     where: { userId: session.userId, userRole: "SALES_REP", status: "APPROVED" },
     _sum: { amount: true },
