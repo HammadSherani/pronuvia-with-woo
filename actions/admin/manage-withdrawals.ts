@@ -21,7 +21,7 @@ async function applyWithdrawDecision(
       where: { id: requestId },
       select: {
         id: true, status: true, amount: true, userId: true, userRole: true,
-        note: true, createdAt: true, snapshotAt: true,
+        note: true, createdAt: true, snapshotAt: true, periodKey: true,
       },
     });
 
@@ -95,6 +95,7 @@ async function applyWithdrawDecision(
       note: request.note,
       createdAt: request.createdAt,
       snapshotAt: request.snapshotAt,
+      periodKey: request.periodKey,
     };
   });
 }

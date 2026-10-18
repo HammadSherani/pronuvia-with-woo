@@ -7,6 +7,7 @@ export interface CommissionOrder {
   amount:      number;
   rate:        number;
   description?: string | null;
+  excluded?:   string | null;   // "Refunded" / "Cancelled": listed at $0
 }
 
 export async function generateCommissionStatementPdf(opts: {
@@ -115,7 +116,7 @@ export async function generateCommissionStatementPdf(opts: {
         ? (o.description?.toLowerCase().startsWith("withdrawal approved by admin")
           ? "Paid Commission"
           : o.description || o.orderNumber)
-        : `#${o.orderNumber}`;
+        : o.excluded ? `#${o.orderNumber} · ${o.excluded}` : `#${o.orderNumber}`;
       doc.text(orderLabel, col.num, y + 4, {
         lineBreak: false,
         width: 160,
@@ -127,7 +128,7 @@ export async function generateCommissionStatementPdf(opts: {
       );
       doc.fillColor(teal);
       doc.text(`${o.rate}%`, col.rate, y + 4, { lineBreak: false });
-      doc.fillColor("#047857");
+      doc.fillColor(o.excluded ? "#9ca3af" : "#047857");
       doc.text(formatMoney(o.amount), col.amt, y + 4, { lineBreak: false });
       y += rowH;
     }

@@ -84,6 +84,7 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
     userId:           request.userId,
     userRole:         request.userRole,
     requestCreatedAt: request.snapshotAt ?? request.createdAt,
+    periodKey:        request.periodKey,
   });
   const details = await prisma.order.findMany({
     where:  { orderNumber: { in: statement.map((o) => o.orderNumber) } },
@@ -99,7 +100,7 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
       const o = byNumber.get(st.orderNumber);
       if (!o) return [];
       const full = isRep ? o.salesRepCommissionAmount : o.physicianCommissionAmount;
-      return [{ ...o, createdAt: st.createdAt, commission: st.amount, rate: st.rate, fullCommission: full }];
+      return [{ ...o, createdAt: st.createdAt, commission: st.amount, rate: st.rate, fullCommission: full, excluded: st.excluded ?? null }];
     })
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   // Wallet adjustments made by the admin in the same payout
@@ -252,6 +253,9 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <p className="text-sm font-bold text-emerald-600">{fmt(commAmt)}</p>
+                      {order.excluded && (
+                        <p className="text-[10px] font-semibold text-red-500">{order.excluded} · not included</p>
+                      )}
                       {order.fullCommission - commAmt > 0.004 && (
                         <p className="text-[10px] text-orange-500">
                           <span className="line-through text-gray-400 mr-1">{fmt(order.fullCommission)}</span>
