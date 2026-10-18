@@ -1,4 +1,5 @@
 import { requirePhysician } from "@/lib/auth/dal";
+import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { PhysicianWalletPanel } from "@/components/physician/wallet-panel";
 import { formatDate } from "@/lib/utils/timezone";
@@ -52,10 +53,11 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
   return (
     <table className="w-full text-sm table-fixed">
       <colgroup>
-        <col className="w-[20%]" />
-        <col className="w-[28%]" />
-        <col className="w-[22%]" />
-        <col className="w-[30%]" />
+        <col className="w-[18%]" />
+        <col className="w-[24%]" />
+        <col className="w-[18%]" />
+        <col className="w-[26%]" />
+        <col className="w-[14%]" />
       </colgroup>
       <thead>
         <tr className="border-b border-gray-100 bg-gray-50/60">
@@ -63,6 +65,7 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
           <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Order Number</th>
           <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Commission Rate</th>
           <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Net Earnings</th>
+          <th className="px-5 py-3.5" />
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-50">
@@ -101,6 +104,13 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
                 </span>
               )}
             </td>
+            <td className="px-5 py-4 text-right">
+              <Link href={`/physician/orders/${o.orderNumber}`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#3DBFA4] hover:text-[#35a993] whitespace-nowrap">
+                View Order
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+              </Link>
+            </td>
           </tr>
         ))}
       </tbody>
@@ -112,6 +122,7 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
               {fmt(orders.reduce((s, o) => s + netOf(o), 0))}
             </span>
           </td>
+          <td />
         </tr>
       </tfoot>
     </table>
@@ -318,10 +329,11 @@ export default async function PhysicianCommissionPage() {
             : (
               <table className="w-full text-sm table-fixed">
                 <colgroup>
-                  <col className="w-[20%]" />
-                  <col className="w-[28%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[30%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[24%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[26%]" />
+                  <col className="w-[14%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/60">
@@ -329,6 +341,7 @@ export default async function PhysicianCommissionPage() {
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Order Number</th>
                     <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Commission Rate</th>
                     <th className="text-right px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Net Earnings</th>
+                    <th className="px-5 py-3.5" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -356,6 +369,13 @@ export default async function PhysicianCommissionPage() {
                             Rejected by admin{reviewNoteOf(o) ? `: ${reviewNoteOf(o)}` : ""}
                           </span>
                         )}
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Link href={`/physician/orders/${o.orderNumber}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-[#3DBFA4] hover:text-[#35a993] whitespace-nowrap">
+                          View Order
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                        </Link>
                       </td>
                     </tr>
                   ))}
