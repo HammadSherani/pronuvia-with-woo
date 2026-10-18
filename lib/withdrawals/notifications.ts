@@ -14,6 +14,7 @@ export type ApprovedPayoutRequest = {
   note: string | null;
   createdAt: Date;
   snapshotAt?: Date | null;
+  periodKey?: string | null;
 };
 
 function errorMessage(error: unknown): string {
@@ -69,6 +70,7 @@ export async function sendPayoutApprovalEmail(
       userId: request.userId,
       userRole: request.userRole,
       requestCreatedAt: snapshotAt,
+      periodKey: request.periodKey,
     });
     const period = parsePayoutPeriod(request.note, snapshotAt);
     const pdfOrders = orders.map((order) => ({
@@ -77,6 +79,7 @@ export async function sendPayoutApprovalEmail(
       amount: order.amount,
       rate: order.rate,
       description: order.description,
+      excluded: order.excluded,
     }));
 
     const [pdfBuffer, { subject, html }] = await Promise.all([
@@ -144,6 +147,7 @@ export async function processPendingPayoutNotifications(limit = 25) {
       note: true,
       createdAt: true,
       snapshotAt: true,
+      periodKey: true,
       notificationAttempts: true,
       notificationLastAttemptAt: true,
     },

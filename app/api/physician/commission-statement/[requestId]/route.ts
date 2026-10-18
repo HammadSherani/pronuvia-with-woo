@@ -15,7 +15,7 @@ export async function GET(
   // Fetch the withdraw request — must belong to this physician and be APPROVED
   const request = await prisma.withdrawRequest.findUnique({
     where: { id: requestId },
-    select: { id: true, userId: true, userRole: true, amount: true, note: true, status: true, createdAt: true, snapshotAt: true },
+    select: { id: true, userId: true, userRole: true, amount: true, note: true, status: true, createdAt: true, snapshotAt: true, periodKey: true },
   });
 
   if (
@@ -39,6 +39,7 @@ export async function GET(
     userId: session.userId,
     userRole: "PHYSICIAN",
     requestCreatedAt: request.snapshotAt ?? request.createdAt,
+    periodKey: request.periodKey,
   });
 
   const period = parsePayoutPeriod(request.note, request.snapshotAt ?? request.createdAt);
@@ -53,6 +54,7 @@ export async function GET(
       amount:      o.amount,
       rate:        o.rate,
       description: o.description,
+      excluded:    o.excluded,
     })),
     totalAmount:     request.amount,
     bankName:        physician.bankName,

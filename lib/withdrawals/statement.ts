@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import type { Role } from "@/generated/prisma/enums";
+import { periodFromKey } from "@/lib/withdrawals/monthly";
 
 export type PayoutStatementOrder = {
   orderNumber: string;
@@ -7,6 +8,8 @@ export type PayoutStatementOrder = {
   amount: number;
   rate: number;
   description?: string | null;
+  // Fully refunded / cancelled in the payout's month: listed at $0, not paid
+  excluded?: "Refunded" | "Cancelled" | null;
 };
 
 /**
@@ -15,7 +18,62 @@ export type PayoutStatementOrder = {
  * historical commissions. The order fallback keeps older requests usable if
  * their legacy wallet transactions do not have an orderId.
  */
-export async function getPayoutStatementOrders({
+export async function getPayoutStatementOrders(opts: {
+  userId: string;
+  userRole: Role;
+  requestCreatedAt: Date;
+  periodKey?: string | null;
+}): Promise<PayoutStatementOrder[]> {
+  const paid = await paidStatementOrders(opts);
+  const unpaid = await unpaidPeriodOrders(opts, new Set(paid.map((o) => o.orderNumber)));
+  return [...paid, ...unpaid].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+/**
+ * Orders of the payout's month whose commission was not paid because the
+ * whole order was refunded or cancelled (or refunds took back all of it).
+ * Listed at $0 so the statement shows them without adding to the total.
+ */
+async function unpaidPeriodOrders(
+  { userId, userRole, requestCreatedAt, periodKey }: { userId: string; userRole: Role; requestCreatedAt: Date; periodKey?: string | null },
+  listed: Set<string>,
+): Promise<PayoutStatementOrder[]> {
+  if (!periodKey) return [];
+  let period;
+  try { period = periodFromKey(periodKey); } catch { return []; }
+  const isPhysician = userRole === "PHYSICIAN";
+  const end = requestCreatedAt < period.end ? requestCreatedAt : period.end;
+  const orders = await prisma.order.findMany({
+    where: {
+      ...(isPhysician ? { physicianId: userId, physicianCommissionAmount: { gt: 0 } } : { salesRepId: userId, salesRepCommissionAmount: { gt: 0 } }),
+      createdAt: { gte: period.start, lt: end },
+    },
+    select: {
+      orderNumber: true, createdAt: true, status: true,
+      salesRepCommissionAmount: true, salesRepCommissionRate: true, salesRepClawback: true,
+      physicianCommissionAmount: true, physicianCommissionRate: true, physicianClawback: true,
+    },
+  });
+  return orders.flatMap((o) => {
+    if (listed.has(o.orderNumber)) return [];
+    const left = isPhysician
+      ? o.physicianCommissionAmount - (o.physicianClawback ?? 0)
+      : o.salesRepCommissionAmount - (o.salesRepClawback ?? 0);
+    const excluded = o.status === "CANCELLED" ? "Cancelled" as const
+      : o.status === "REFUNDED" || left <= 0.004 ? "Refunded" as const
+      : null;
+    if (!excluded) return [];   // still to be paid in a later payout
+    return [{
+      orderNumber: o.orderNumber,
+      createdAt:   o.createdAt,
+      amount:      0,
+      rate:        isPhysician ? o.physicianCommissionRate : o.salesRepCommissionRate,
+      excluded,
+    }];
+  });
+}
+
+async function paidStatementOrders({
   userId,
   userRole,
   requestCreatedAt,
