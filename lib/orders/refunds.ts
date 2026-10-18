@@ -10,6 +10,7 @@ import {
   createWooRefund, getWooOrder, getWooRefund, REFUND_ID_KEY, updateWooOrder, type WooOrderDetail,
 } from "@/lib/woo/orders";
 import { STATUS_META_KEY } from "./woo-status";
+import { reviewManaged } from "./commission-review";
 
 // Refunds and returns. A refund is recorded here (OrderRefund, the order's
 // returned total and clawbacks, its status) and in WooCommerce (a refund on
@@ -40,6 +41,7 @@ const ORDER_SELECT = {
   salesRepId: true, physicianId: true,
   salesRepCommissionAmount: true, physicianCommissionAmount: true,
   commissionPaid: true, wooOrderId: true,
+  salesRepCommissionReview: true, physicianCommissionReview: true,
   returnedAt: true, returnedTotal: true, returnReason: true,
   salesRepClawback: true, physicianClawback: true,
   stripePaymentIntentId: true,
@@ -128,8 +130,11 @@ async function record(order: RefundOrder, p: Plan, opts: {
   const repLeft = Math.max(0, order.salesRepCommissionAmount  - (order.salesRepClawback  ?? 0));
   const drLeft  = Math.max(0, order.physicianCommissionAmount - (order.physicianClawback ?? 0));
   const share   = Math.min(1, p.eventTotal / (order.subtotal > 0 ? order.subtotal : order.total));
-  const salesRepClawback  = p.isFull ? repLeft : round2(Math.min(repLeft, order.salesRepCommissionAmount  * share));
-  const physicianClawback = p.isFull ? drLeft  : round2(Math.min(drLeft,  order.physicianCommissionAmount * share));
+  // Commission paid through the WP review is taken back only by the admin's
+  // "Refund commission" on the WP order page, not by the order refund
+  const managed = reviewManaged(order);
+  const salesRepClawback  = managed ? 0 : p.isFull ? repLeft : round2(Math.min(repLeft, order.salesRepCommissionAmount  * share));
+  const physicianClawback = managed ? 0 : p.isFull ? drLeft  : round2(Math.min(drLeft,  order.physicianCommissionAmount * share));
 
   let refund;
   try {
@@ -197,7 +202,7 @@ async function record(order: RefundOrder, p: Plan, opts: {
   await prisma.order.update({
     where: { id: order.id },
     data: {
-      ...(p.isFull && { status: OrderStatus.REFUNDED, commissionPaid: false }),
+      ...(p.isFull && { status: OrderStatus.REFUNDED, ...(!managed && { commissionPaid: false }) }),
       returnedAt:        order.returnedAt ?? new Date(),
       returnReason:      opts.reason.trim() || order.returnReason || null,
       returnedTotal:     round2((order.returnedTotal ?? 0) + opts.amount),
@@ -332,7 +337,9 @@ export async function refundOrder(
     : "";
   return {
     success: true,
-    message: (order.commissionPaid
+    message: (reviewManaged(order)
+      ? `Refund #${refundNumber} processed.${how} Commission was approved and paid: refund it in the WP order page's Commissions box if needed.`
+      : order.commissionPaid
       ? `Refund #${refundNumber} processed.${how} Rep clawback: $${done.salesRepClawback.toFixed(2)}, Doctor clawback: $${done.physicianClawback.toFixed(2)}.`
       : `Refund #${refundNumber} processed.${how} Commission not yet paid — no clawback applied.`) + wooNote,
   };

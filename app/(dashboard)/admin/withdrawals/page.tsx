@@ -371,6 +371,30 @@ export default async function CommissionPayoutPage() {
       map.set(userId, arr);
     }
   }
+  // Commission the admin refunded on the WP order page this month, after it was paid
+  const commissionRefunds = await prisma.commissionRefund.findMany({ where: { createdAt: { gte: monthStart, lt: monthEnd } } });
+  if (commissionRefunds.length) {
+    const refundOrders = new Map((await prisma.order.findMany({
+      where:  { id: { in: [...new Set(commissionRefunds.map((c) => c.orderId))] } },
+      select: { id: true, orderNumber: true, createdAt: true, salesRepCommissionRate: true, physicianCommissionRate: true },
+    })).map((o) => [o.id, o]));
+    for (const c of commissionRefunds) {
+      const o = refundOrders.get(c.orderId);
+      if (!o) continue;
+      const map = c.userRole === "PHYSICIAN" ? docRejectedMap : repRejectedMap;
+      const arr = map.get(c.userId) ?? [];
+      arr.push({
+        orderNumber: o.orderNumber,
+        createdAt:   o.createdAt.toISOString(),
+        amount:      c.amount,
+        rate:        (c.userRole === "PHYSICIAN" ? o.physicianCommissionRate : o.salesRepCommissionRate) ?? 0,
+        refundedAt:  c.createdAt.toISOString(),
+        reason:      `Commission refunded by admin${c.note ? `: ${c.note}` : ""}`,
+      });
+      map.set(c.userId, arr);
+    }
+  }
+
   // Names of users seen only here
   const missingReps = [...repRejectedMap.keys()].filter((id) => !repMap.has(id));
   const missingDocs = [...docRejectedMap.keys()].filter((id) => !docMap.has(id));

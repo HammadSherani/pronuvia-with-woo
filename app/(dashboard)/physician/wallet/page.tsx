@@ -238,6 +238,13 @@ export default async function PhysicianCommissionPage() {
     !isAwaiting(o) && (o.physicianCommissionReview === "REJECTED" || (!o.commissionPaid && CLOSED.has(o.status)) || ((o.physicianCommissionAmount ?? 0) > 0 && netOf(o) <= 0));
   const paidOrders     = earningOrders.filter((o) => !isRejected(o) && !isAwaiting(o) && o.commissionPaid);
   const reversedOrders = earningOrders.filter((o) => isRejected(o));
+  // Commission the admin refunded on the WP order page after paying it: that
+  // part shows under Rejected too (the rest stays approved)
+  const refundedPart   = earningOrders.filter((o) => o.commissionPaid && o.physicianCommissionReview != null && !isRejected(o) && (o.physicianClawback ?? 0) > 0);
+  const rejectedRows   = [
+    ...reversedOrders.map((o) => ({ o, amount: o.physicianCommissionAmount ?? 0, adminRefund: o.commissionPaid && o.physicianCommissionReview != null && (o.physicianClawback ?? 0) > 0 })),
+    ...refundedPart.map((o) => ({ o, amount: o.physicianClawback ?? 0, adminRefund: true })),
+  ];
   // Pending: not yet in the wallet, including commission awaiting the admin's approval
   const pendingOrders  = earningOrders.filter((o) => !isRejected(o) && !o.commissionPaid);
 
@@ -320,11 +327,11 @@ export default async function PhysicianCommissionPage() {
         <div className="flex items-center gap-3 mb-3">
           <h2 className="text-sm font-bold text-gray-700">Rejected Commission</h2>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-            {reversedOrders.length}
+            {rejectedRows.length}
           </span>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {reversedOrders.length === 0
+          {rejectedRows.length === 0
             ? <EmptySection message="No rejected commissions" />
             : (
               <table className="w-full text-sm table-fixed">
@@ -345,8 +352,8 @@ export default async function PhysicianCommissionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {reversedOrders.map((o) => (
-                    <tr key={o.id} className="hover:bg-gray-50/50 transition-colors">
+                  {rejectedRows.map(({ o, amount, adminRefund }) => (
+                    <tr key={`${o.id}-${adminRefund}`} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-5 py-4 text-xs text-gray-400 whitespace-nowrap">
                         {formatDate(o.createdAt)}
                       </td>
@@ -362,8 +369,11 @@ export default async function PhysicianCommissionPage() {
                       </td>
                       <td className="px-5 py-4 text-right">
                         <span className="text-sm font-bold text-red-400 line-through">
-                          {fmt(o.physicianCommissionAmount ?? 0)}
+                          {fmt(amount)}
                         </span>
+                        {adminRefund && o.physicianCommissionReview !== "REJECTED" && (
+                          <span className="block text-[11px] text-red-500 mt-0.5">Commission refunded by admin</span>
+                        )}
                         {o.physicianCommissionReview === "REJECTED" && (
                           <span className="block text-[11px] text-red-500 mt-0.5">
                             Rejected by admin{reviewNoteOf(o) ? `: ${reviewNoteOf(o)}` : ""}

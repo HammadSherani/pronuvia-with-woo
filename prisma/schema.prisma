@@ -331,6 +331,21 @@ model Counter {
   value Int
 }
 
+// Commission taken back by the admin on the WP order page (Commissions box,
+// "Refund commission") after it was approved and paid into the wallet.
+// `key` is the refund's id from WP, so a repeated webhook applies it once.
+model CommissionRefund {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  orderId   String   @db.ObjectId
+  userId    String   @db.ObjectId
+  userRole  Role
+  amount    Float
+  note      String?
+  by        String?
+  createdAt DateTime @default(now())
+}
+
 model OrderNote {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   orderId   String   @db.ObjectId

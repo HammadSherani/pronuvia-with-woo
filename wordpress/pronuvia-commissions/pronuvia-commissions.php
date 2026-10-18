@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.0.1
+ * Version:     1.1.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -12,7 +12,10 @@
  * meta with an order note, and the order save makes WooCommerce notify
  * Pronuvia (order.updated webhook), which pays only approved commission.
  * Once Pronuvia has paid the commission (`pronuvia_commission_paid` = yes),
- * the box only shows it.
+ * it can no longer be approved / rejected / modified, but the admin can
+ * "Refund commission": take back any part of it (e.g. after the order was
+ * refunded). Pronuvia takes that off the user's wallet (which may go below
+ * zero) and lists it under Rejected Commission.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -26,6 +29,14 @@ function pronuvia_comm_roles() {
 		'physician' => array( 'label' => 'Doctor', 'name_key' => 'pronuvia_physician_name' ),
 		'sales_rep' => array( 'label' => 'Sales Rep', 'name_key' => 'pronuvia_sales_rep_name' ),
 	);
+}
+
+function pronuvia_comm_refunded( array $e ) {
+	$sum = 0;
+	foreach ( (array) ( $e['refunds'] ?? array() ) as $r ) {
+		$sum += (float) ( $r['amount'] ?? 0 );
+	}
+	return round( $sum, 2 );
 }
 
 function pronuvia_comm_read( $order ) {
@@ -97,9 +108,21 @@ function pronuvia_comm_box( $post_or_order ) {
 					<strong><?php echo esc_html( $locked === 'Paid' ? 'paid' : $status ); ?></strong>
 					<?php if ( ! empty( $e['note'] ) ) : ?><br><small><?php echo esc_html( $e['note'] ); ?></small><?php endif; ?>
 					<?php if ( ! empty( $e['by'] ) ) : ?><br><small>by <?php echo esc_html( $e['by'] ); ?></small><?php endif; ?>
+					<?php foreach ( (array) ( $e['refunds'] ?? array() ) as $r ) : ?>
+						<br><small style="color:#b32d2e">Refunded <?php echo wp_kses_post( wc_price( (float) ( $r['amount'] ?? 0 ) ) ); ?><?php echo ! empty( $r['note'] ) ? ': ' . esc_html( $r['note'] ) : ''; ?></small>
+					<?php endforeach; ?>
 				</td>
 				<td>
-					<?php if ( $locked ) : ?>
+					<?php
+					$left = round( $amount - pronuvia_comm_refunded( $e ), 2 );
+					if ( $locked === 'Paid' && $status === 'approved' && $left > 0 ) : ?>
+						<p style="margin:0 0 6px">
+							<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( number_format( $left, 2, '.', '' ) ); ?>" class="pc-amount" style="width:90px" placeholder="<?php echo esc_attr( number_format( $left, 2, '.', '' ) ); ?>">
+							<button type="button" class="button" data-decision="refund">Refund commission</button>
+						</p>
+						<input type="text" class="pc-note" placeholder="Note (optional)" style="width:100%">
+						<br><small>Up to <?php echo wp_kses_post( wc_price( $left ) ); ?></small>
+					<?php elseif ( $locked ) : ?>
 						<em><?php echo esc_html( $locked ); ?></em>
 					<?php else : ?>
 						<p style="margin:0 0 6px">
@@ -119,6 +142,8 @@ function pronuvia_comm_box( $post_or_order ) {
 	</table>
 	<?php if ( ! $locked ) : ?>
 		<p class="description">An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed.</p>
+	<?php elseif ( $locked === 'Paid' ) : ?>
+		<p class="description">This commission is paid. Refunding the order does not take it back: use Refund commission for the part to take back.</p>
 	<?php endif; ?>
 	<script>
 	( function () {
@@ -185,6 +210,23 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 		$e['status'] = 'approved';
 		$e['amount'] = $new;
 		$text        = sprintf( '%s commission modified: %s → %s.', $label, wp_strip_all_tags( wc_price( $current ) ), wp_strip_all_tags( wc_price( $new ) ) );
+	} elseif ( 'refund' === $decision ) {
+		$left = round( $current - pronuvia_comm_refunded( $e ), 2 );
+		if ( ! is_numeric( $amount_raw ) || (float) $amount_raw <= 0 ) {
+			return new WP_Error( 'amount', 'Enter the commission amount to refund.' );
+		}
+		$amt = round( (float) $amount_raw, 2 );
+		if ( $amt > $left ) {
+			return new WP_Error( 'amount', sprintf( 'At most %s can be refunded.', wp_strip_all_tags( wc_price( $left ) ) ) );
+		}
+		$e['refunds']   = array_values( (array) ( $e['refunds'] ?? array() ) );
+		$e['refunds'][] = array( 'id' => uniqid( 'r', true ), 'amount' => $amt, 'note' => trim( (string) $note ), 'at' => gmdate( 'c' ), 'by' => $by );
+		$review[ $role ] = $e;
+		$text = sprintf( '%s commission refunded: %s.', $label, wp_strip_all_tags( wc_price( $amt ) ) );
+		if ( '' !== trim( (string) $note ) ) {
+			$text .= ' Note: ' . trim( (string) $note );
+		}
+		return array( 'review' => $review, 'note' => $text );
 	} else {
 		return new WP_Error( 'decision', 'Unknown action.' );
 	}
@@ -212,8 +254,13 @@ function pronuvia_comm_ajax() {
 	if ( ! $order || ! $order->get_meta( 'pronuvia_order_id' ) ) {
 		wp_send_json_error( array( 'message' => 'Order not found.' ), 404 );
 	}
-	$locked = pronuvia_comm_locked( $order );
-	if ( $locked ) {
+	$locked   = pronuvia_comm_locked( $order );
+	$decision = sanitize_key( wp_unslash( $_POST['decision'] ?? '' ) );
+	if ( 'refund' === $decision ) {
+		if ( $locked !== 'Paid' ) {
+			wp_send_json_error( array( 'message' => 'Only a commission already paid can be refunded.' ), 409 );
+		}
+	} elseif ( $locked ) {
 		wp_send_json_error( array( 'message' => 'This commission can no longer be changed (' . $locked . ').' ), 409 );
 	}
 
@@ -221,7 +268,7 @@ function pronuvia_comm_ajax() {
 	$result = pronuvia_comm_decide(
 		pronuvia_comm_read( $order ),
 		sanitize_key( wp_unslash( $_POST['role'] ?? '' ) ),
-		sanitize_key( wp_unslash( $_POST['decision'] ?? '' ) ),
+		$decision,
 		wp_unslash( $_POST['amount'] ?? '' ),
 		sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) ),
 		$user && $user->exists() ? $user->display_name : 'admin'
