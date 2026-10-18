@@ -85,6 +85,9 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
               <span className="text-sm font-bold text-gray-800">
                 {fmt(netOf(o))}
               </span>
+              {o.physicianCommissionReview === "AWAITING" && (
+                <span className="block text-[11px] text-amber-600">Awaiting approval</span>
+              )}
               {o.physicianCommissionOriginal != null && o.physicianCommissionOriginal !== o.physicianCommissionAmount && (
                 <span className="block text-[11px] text-indigo-500">
                   <span className="line-through text-gray-400 mr-1">{fmt(o.physicianCommissionOriginal)}</span>
@@ -222,11 +225,10 @@ export default async function PhysicianCommissionPage() {
     !o.commissionPaid && !CLOSED.has(o.status) && o.physicianCommissionReview === "AWAITING";
   const isRejected = (o: (typeof earningOrders)[number]) =>
     !isAwaiting(o) && (o.physicianCommissionReview === "REJECTED" || (!o.commissionPaid && CLOSED.has(o.status)) || ((o.physicianCommissionAmount ?? 0) > 0 && netOf(o) <= 0));
-  const awaitingOrders = earningOrders.filter((o) => isAwaiting(o));
   const paidOrders     = earningOrders.filter((o) => !isRejected(o) && !isAwaiting(o) && o.commissionPaid);
   const reversedOrders = earningOrders.filter((o) => isRejected(o));
-  const pendingOrders  = earningOrders.filter((o) => !isRejected(o) && !isAwaiting(o) && !o.commissionPaid);
-  const totalAwaiting  = awaitingOrders.reduce((s, o) => s + netOf(o), 0);
+  // Pending: not yet in the wallet, including commission awaiting the admin's approval
+  const pendingOrders  = earningOrders.filter((o) => !isRejected(o) && !o.commissionPaid);
 
   const totalPaid     = paidOrders.reduce((s, o)     => s + netOf(o), 0);
   const totalPending  = pendingOrders.reduce((s, o)  => s + netOf(o), 0);
@@ -259,27 +261,6 @@ export default async function PhysicianCommissionPage() {
         bankAccountNumber={physician?.bankAccountNumber}
         bankAccountName={physician?.bankAccountName}
       />
-
-      {/* Awaiting approval */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-sm font-bold text-gray-700">Awaiting Approval</h2>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
-            {awaitingOrders.length}
-          </span>
-          {awaitingOrders.length > 0 && (
-            <span className="text-xs text-gray-500 font-medium ml-auto">
-              {fmt(totalAwaiting)} waiting for admin approval
-            </span>
-          )}
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {awaitingOrders.length === 0
-            ? <EmptySection message="No commissions awaiting approval" />
-            : <CommissionTable orders={awaitingOrders} />
-          }
-        </div>
-      </div>
 
       {/* Pending Commission */}
       <div className="mb-8">

@@ -48,9 +48,9 @@ export default async function SalesDashboardPage() {
   ]);
 
   // A partly refunded order still pays what is left of its commission;
-  // only commission the admin approved counts
+  // rejected commission pays nothing
   const totalPending = pendingCommissionOrders
-    .filter((o) => o.salesRepCommissionReview !== "AWAITING" && o.salesRepCommissionReview !== "REJECTED")
+    .filter((o) => o.salesRepCommissionReview !== "REJECTED")
     .reduce((sum, o) => sum + Math.max(0, (o.salesRepCommissionAmount ?? 0) - (o.salesRepClawback ?? 0)), 0);
   const totalCommission = totalPending + totalPaidOut;
 
