@@ -54,9 +54,9 @@ export default async function PhysicianDashboardPage() {
 
   const totalOrders      = orderAggregate._count;
   // A partly refunded order still pays what is left of its commission;
-  // only commission the admin approved counts
+  // rejected commission pays nothing
   const totalPending = pendingCommissionOrders
-    .filter((o) => o.physicianCommissionReview !== "AWAITING" && o.physicianCommissionReview !== "REJECTED")
+    .filter((o) => o.physicianCommissionReview !== "REJECTED")
     .reduce((sum, o) => sum + Math.max(0, (o.physicianCommissionAmount ?? 0) - (o.physicianClawback ?? 0)), 0);
   const totalCommission  = totalPending + totalPaidOut;
   const loginId          = physician?.loginId ?? "Not set";
