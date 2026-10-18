@@ -638,10 +638,10 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
         </div>
       </div>
 
-      {/* ══ 2. Awaiting Approval (commissions not yet reviewed on the WP order page) ══ */}
+      {/* ══ 2. Pending Commission (not yet approved on the WP order page) ══ */}
       <div className="mb-8">
         <SectionHeader
-          title="Awaiting Approval"
+          title="Pending Commission"
           count={currentMonth.length}
           countColor="bg-amber-100 text-amber-700 border-amber-200"
         />
@@ -654,7 +654,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
                 </svg>
               </div>
-              <p className="text-sm text-gray-400">No commissions awaiting approval</p>
+              <p className="text-sm text-gray-400">No pending commission</p>
             </div>
           ) : (
             <>
@@ -694,7 +694,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                       <td className="px-5 py-3.5 text-right">
                         <button
                           type="button"
-                          onClick={() => setOrdersModal({ name: entry.userName, period: "Awaiting approval", orders: entry.orders })}
+                          onClick={() => setOrdersModal({ name: entry.userName, period: "Pending commission", orders: entry.orders })}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
