@@ -302,16 +302,16 @@ export default async function PhysicianCommissionPage() {
         </div>
       </div>
 
-      {/* Commission Paid-Out */}
+      {/* Approved Commission (in the wallet, paid out from Commission Payout) */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-sm font-bold text-gray-700">Commission Paid-Out</h2>
+          <h2 className="text-sm font-bold text-gray-700">Approved Commission</h2>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             {paidOrders.length}
           </span>
           {paidOrders.length > 0 && (
             <span className="text-xs text-emerald-600 font-medium ml-auto">
-              {fmt(totalPaid)} credited
+              {fmt(totalPaid)} in your wallet / paid out
             </span>
           )}
         </div>
