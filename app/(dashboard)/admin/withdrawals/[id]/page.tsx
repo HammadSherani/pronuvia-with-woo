@@ -5,6 +5,7 @@ import { prisma }      from "@/lib/db/prisma";
 import { WithdrawalDetailActions } from "@/components/admin/withdrawal-detail-actions";
 import { OrderStatus } from "@/generated/prisma/enums";
 import { formatDate, formatMonthYear } from "@/lib/utils/timezone";
+import { getPayoutStatementOrders } from "@/lib/withdrawals/statement";
 
 export const metadata = { title: "Withdrawal Orders – Pronuvia Admin" };
 
@@ -76,35 +77,35 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
   const userName = user ? `${user.firstName} ${user.lastName}` : "Unknown";
   const period   = parsePeriod(request.note, request.createdAt);
 
-  // All commission orders for this user (newest first)
-  const orders = isRep
-    ? await prisma.order.findMany({
-        where:   { salesRepId: request.userId, salesRepCommissionAmount: { gt: 0 } },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true, orderNumber: true, status: true, createdAt: true,
-          total: true, shippingAddress: true, items: true,
-          salesRepCommissionAmount: true, salesRepCommissionRate: true,
-          commissionPaid: true,
-        },
-      })
-    : await prisma.order.findMany({
-        where:   { physicianId: request.userId, physicianCommissionAmount: { gt: 0 } },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true, orderNumber: true, status: true, createdAt: true,
-          total: true, shippingAddress: true, items: true,
-          physicianCommissionAmount: true, physicianCommissionRate: true,
-          commissionPaid: true,
-        },
-      });
+  // The orders this payout covers, with the commission actually paid for each
+  // (after refund clawbacks): the same list as the PDF statement, so the
+  // rows add up to the request amount.
+  const statement = await getPayoutStatementOrders({
+    userId:           request.userId,
+    userRole:         request.userRole,
+    requestCreatedAt: request.snapshotAt ?? request.createdAt,
+  });
+  const details = await prisma.order.findMany({
+    where:  { orderNumber: { in: statement.map((o) => o.orderNumber) } },
+    select: {
+      id: true, orderNumber: true, status: true, total: true, items: true,
+      salesRepCommissionAmount: true, physicianCommissionAmount: true,
+      commissionPaid: true,
+    },
+  });
+  const byNumber = new Map(details.map((o) => [o.orderNumber, o]));
+  const orders = statement
+    .flatMap((st) => {
+      const o = byNumber.get(st.orderNumber);
+      if (!o) return [];
+      const full = isRep ? o.salesRepCommissionAmount : o.physicianCommissionAmount;
+      return [{ ...o, createdAt: st.createdAt, commission: st.amount, rate: st.rate, fullCommission: full }];
+    })
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  // Wallet adjustments made by the admin in the same payout
+  const adjustments = statement.filter((st) => !byNumber.has(st.orderNumber));
 
-  const totalCommission = orders.reduce(
-    (s, o) => s + (isRep
-      ? ((o as { salesRepCommissionAmount?: number }).salesRepCommissionAmount ?? 0)
-      : ((o as { physicianCommissionAmount?: number }).physicianCommissionAmount ?? 0)),
-    0,
-  );
+  const totalCommission = statement.reduce((s, o) => s + o.amount, 0);
   const totalRevenue = orders.reduce((s, o) => s + o.total, 0);
 
   return (
@@ -194,7 +195,7 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
 
       {/* Orders table */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        {orders.length === 0 ? (
+        {orders.length === 0 && adjustments.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mb-4">
               <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -218,12 +219,8 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {orders.map((order) => {
-                const commAmt  = isRep
-                  ? (order as { salesRepCommissionAmount?: number }).salesRepCommissionAmount ?? 0
-                  : (order as { physicianCommissionAmount?: number }).physicianCommissionAmount ?? 0;
-                const commRate = isRep
-                  ? (order as { salesRepCommissionRate?: number }).salesRepCommissionRate ?? 0
-                  : (order as { physicianCommissionRate?: number }).physicianCommissionRate ?? 0;
+                const commAmt  = order.commission;
+                const commRate = order.rate;
                 const badge    = STATUS_BADGE[order.status] ?? { label: order.status, cls: "bg-gray-50 text-gray-500 border-gray-200" };
                 const products = extractProducts(Array.isArray(order.items) ? order.items as unknown[] : []);
 
@@ -255,6 +252,12 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <p className="text-sm font-bold text-emerald-600">{fmt(commAmt)}</p>
+                      {order.fullCommission - commAmt > 0.004 && (
+                        <p className="text-[10px] text-orange-500">
+                          <span className="line-through text-gray-400 mr-1">{fmt(order.fullCommission)}</span>
+                          −{fmt(order.fullCommission - commAmt)} refunded
+                        </p>
+                      )}
                       <p className="text-[10px] text-gray-400">{commRate}%</p>
                     </td>
                     <td className="px-5 py-4 text-right">
@@ -271,6 +274,14 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
                   </tr>
                 );
               })}
+              {adjustments.map((a, i) => (
+                <tr key={`adj-${i}`}>
+                  <td className="px-5 py-4 text-xs font-semibold text-gray-700" colSpan={2}>{a.description || "Wallet adjustment"}</td>
+                  <td className="px-5 py-4 text-xs text-gray-500" colSpan={3}>{formatDate(a.createdAt)}</td>
+                  <td className="px-5 py-4 text-right text-sm font-bold text-emerald-600">{fmt(a.amount)}</td>
+                  <td />
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
