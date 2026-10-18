@@ -3,6 +3,7 @@ import { prisma }           from "@/lib/db/prisma";
 import { PageHeader }       from "@/components/admin/page-header";
 import { CommissionPayoutClient } from "@/components/admin/commission-payout-client";
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
+import { wpAdmin } from "@/lib/woo/admin-links";
 
 export const metadata = { title: "Commission Payout – Pronuvia Admin" };
 
@@ -37,17 +38,18 @@ export default async function CommissionPayoutPage() {
       orderBy: { createdAt: "desc" },
       select:  { id: true, userId: true, userRole: true, amount: true, note: true, adminNote: true, createdAt: true },
     }),
-    // Current month orders for sales reps with commission not yet credited to their wallet
+    // Sales rep commissions awaiting the admin's review (WP order page), any month
     prisma.order.findMany({
       where: {
-        createdAt:               { gte: monthStart, lt: monthEnd },
-        salesRepId:              { not: null },
+        salesRepId:               { not: null },
         salesRepCommissionAmount: { gt: 0 },
-        status:                  { not: "CANCELLED" },
-        commissionPaid:          false,
+        salesRepCommissionReview: "AWAITING",
+        status:                   { notIn: ["CANCELLED", "REFUNDED"] },
+        commissionPaid:           false,
       },
+      orderBy: { createdAt: "desc" },
       select: {
-        id: true,
+        id: true, wooOrderId: true,
         salesRepId: true, orderNumber: true, createdAt: true, status: true, returnedAt: true, returnReason: true,
         salesRepCommissionAmount: true, salesRepClawback: true, salesRepCommissionRate: true,
       },
@@ -55,14 +57,15 @@ export default async function CommissionPayoutPage() {
     // Current month orders for physicians with commission not yet credited to their wallet
     prisma.order.findMany({
       where: {
-        createdAt:                 { gte: monthStart, lt: monthEnd },
         physicianId:               { not: null },
         physicianCommissionAmount: { gt: 0 },
-        status:                    { not: "CANCELLED" },
+        physicianCommissionReview: "AWAITING",
+        status:                    { notIn: ["CANCELLED", "REFUNDED"] },
         commissionPaid:            false,
       },
+      orderBy: { createdAt: "desc" },
       select: {
-        id: true,
+        id: true, wooOrderId: true,
         physicianId: true, orderNumber: true, createdAt: true, status: true, returnedAt: true, returnReason: true,
         physicianCommissionAmount: true, physicianClawback: true, physicianCommissionRate: true,
       },
@@ -215,7 +218,7 @@ export default async function CommissionPayoutPage() {
   });
 
   // ── Build CURRENT MONTH commission rows ───────────────────────────────────
-  type CurrentMonthOrder = { orderNumber: string; createdAt: string; amount: number; rate: number };
+  type CurrentMonthOrder = { orderNumber: string; createdAt: string; amount: number; rate: number; reviewHref?: string };
   type RejectedCommissionOrder = {
     orderNumber: string;
     createdAt: string;
@@ -253,7 +256,7 @@ export default async function CommissionPayoutPage() {
     const netCommission = Math.max(0, (o.salesRepCommissionAmount ?? 0) - clawback);
     if (netCommission <= 0) continue;
     const arr = repCurrentMap.get(id) ?? [];
-    arr.push({ orderNumber: o.orderNumber, createdAt: o.createdAt.toISOString(), amount: netCommission, rate: o.salesRepCommissionRate ?? 0 });
+    arr.push({ orderNumber: o.orderNumber, createdAt: o.createdAt.toISOString(), amount: netCommission, rate: o.salesRepCommissionRate ?? 0, reviewHref: o.wooOrderId ? wpAdmin.editOrder(o.wooOrderId) : undefined });
     repCurrentMap.set(id, arr);
   }
   // Group doc orders by userId
@@ -266,7 +269,7 @@ export default async function CommissionPayoutPage() {
     const netCommission = Math.max(0, (o.physicianCommissionAmount ?? 0) - clawback);
     if (netCommission <= 0) continue;
     const arr = docCurrentMap.get(id) ?? [];
-    arr.push({ orderNumber: o.orderNumber, createdAt: o.createdAt.toISOString(), amount: netCommission, rate: o.physicianCommissionRate ?? 0 });
+    arr.push({ orderNumber: o.orderNumber, createdAt: o.createdAt.toISOString(), amount: netCommission, rate: o.physicianCommissionRate ?? 0, reviewHref: o.wooOrderId ? wpAdmin.editOrder(o.wooOrderId) : undefined });
     docCurrentMap.set(id, arr);
   }
 
@@ -334,6 +337,48 @@ export default async function CommissionPayoutPage() {
       reason: refund?.reason ?? o.returnReason,
     });
     docRejectedMap.set(o.physicianId, arr);
+  }
+
+  // Commissions the admin rejected on the WP order page, for orders this month
+  const adminRejected = await prisma.order.findMany({
+    where: {
+      createdAt: { gte: monthStart, lt: monthEnd },
+      OR: [{ salesRepCommissionReview: "REJECTED" }, { physicianCommissionReview: "REJECTED" }],
+    },
+    select: {
+      id: true, orderNumber: true, createdAt: true, commissionReviewNotes: true,
+      salesRepId: true, salesRepCommissionAmount: true, salesRepCommissionRate: true, salesRepCommissionReview: true,
+      physicianId: true, physicianCommissionAmount: true, physicianCommissionRate: true, physicianCommissionReview: true,
+    },
+  });
+  for (const o of adminRejected) {
+    const notes = (o.commissionReviewNotes ?? {}) as Record<string, { note?: string | null; at?: string | null }>;
+    for (const [userId, review, amount, rate, key, map, seen] of [
+      [o.salesRepId, o.salesRepCommissionReview, o.salesRepCommissionAmount, o.salesRepCommissionRate, "salesRep", repRejectedMap, seenRejectedRepOrders],
+      [o.physicianId, o.physicianCommissionReview, o.physicianCommissionAmount, o.physicianCommissionRate, "physician", docRejectedMap, seenRejectedDocOrders],
+    ] as const) {
+      if (!userId || review !== "REJECTED" || amount <= 0 || seen.has(o.id)) continue;
+      seen.add(o.id);
+      const arr = map.get(userId) ?? [];
+      arr.push({
+        orderNumber: o.orderNumber,
+        createdAt:   o.createdAt.toISOString(),
+        amount,
+        rate:        rate ?? 0,
+        refundedAt:  (notes[key]?.at ? new Date(notes[key].at!) : o.createdAt).toISOString(),
+        reason:      `Rejected by admin${notes[key]?.note ? `: ${notes[key].note}` : ""}`,
+      });
+      map.set(userId, arr);
+    }
+  }
+  // Names of users seen only here
+  const missingReps = [...repRejectedMap.keys()].filter((id) => !repMap.has(id));
+  const missingDocs = [...docRejectedMap.keys()].filter((id) => !docMap.has(id));
+  if (missingReps.length) {
+    for (const r of await prisma.salesRepresentative.findMany({ where: { id: { in: missingReps } }, select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true } })) repMap.set(r.id, r);
+  }
+  if (missingDocs.length) {
+    for (const d of await prisma.partneringPhysician.findMany({ where: { id: { in: missingDocs } }, select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true } })) docMap.set(d.id, d);
   }
 
   const rejectedCommission: RejectedCommissionEntry[] = [

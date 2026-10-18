@@ -10,6 +10,7 @@ import { fromWooStatus, STATUS_META_KEY, toWooStatus } from "./woo-status";
 import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./woo-labels";
 import { importWooRefunds } from "./refunds";
 import { applyCommissionReview, REVIEW_META_KEY } from "./commission-review";
+import { creditReviewedOrder } from "@/lib/withdrawals/credit-order";
 import { wooFetch } from "@/lib/woo/client";
 
 // Orders live in WooCommerce; our Order record is the index the order lists,
@@ -214,6 +215,8 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
 
   // Commission approved / rejected / modified on the WP order page
   await applyCommissionReview(order.id, metaValue(w, REVIEW_META_KEY));
+  // Fully reviewed → into the wallets and Commission Payout (once)
+  await creditReviewedOrder(order.id);
 
   // Labels bought in WP admin (WooCommerce Shipping)
   await applyWooLabels(order.id, parseWooLabels(metaValue(w, LABELS_META_KEY)), async (label) => {

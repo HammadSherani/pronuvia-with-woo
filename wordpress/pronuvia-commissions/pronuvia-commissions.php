@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.0.0
+ * Version:     1.0.1
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -117,6 +117,9 @@ function pronuvia_comm_box( $post_or_order ) {
 		<?php endforeach; ?>
 		</tbody>
 	</table>
+	<?php if ( ! $locked ) : ?>
+		<p class="description">An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed.</p>
+	<?php endif; ?>
 	<script>
 	( function () {
 		var table = document.querySelector( 'table.pronuvia-commissions' );

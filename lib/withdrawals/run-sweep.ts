@@ -1,11 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
-import {
-  buildMonthlyPayoutPlan,
-  monthlyPayoutRequestId,
-  type MonthlyPayoutPeriod,
-  type MonthlyPayoutRequest,
-  type MonthlyPayoutUser,
-} from "@/lib/withdrawals/monthly";
+import type { MonthlyPayoutPeriod, MonthlyPayoutUser } from "@/lib/withdrawals/monthly";
+import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
 import { sweepCommissionPeriod } from "@/lib/withdrawals/commission-sweep";
 
 /**
@@ -56,55 +51,15 @@ export async function runPayoutSweep(sweepPeriod: MonthlyPayoutPeriod) {
     })),
   ];
 
-  if (!users.length) {
-    return { success: true, period: period.label, sweep, created: 0, updated: 0, removed: 0, alreadyApproved: 0 };
+  // One running payout request per user for their whole balance: the same
+  // request the commission approvals on the WP order page add to
+  let touched = 0;
+  for (const user of users) {
+    await upsertRunningPayoutRequest(user.id, user.userRole);
+    touched++;
   }
 
-  const requests = await prisma.withdrawRequest.findMany({
-    where: { OR: users.map((user) => ({ userId: user.id, userRole: user.userRole })) },
-    select: {
-      id: true, userId: true, userRole: true, amount: true, status: true, note: true,
-      periodKey: true, snapshotAt: true, createdAt: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  const plan = buildMonthlyPayoutPlan({ users, requests: requests as MonthlyPayoutRequest[], period });
-
-  if (plan.remove.length) {
-    await prisma.withdrawRequest.deleteMany({ where: { id: { in: plan.remove } } });
-  }
-  if (plan.update.length) {
-    await Promise.all(plan.update.map((item) => prisma.withdrawRequest.update({
-      where: { id: item.id },
-      data: { amount: item.amount, note: item.note },
-    })));
-  }
-  let created = 0;
-  for (const item of plan.create) {
-    try {
-      await prisma.withdrawRequest.create({
-        data: {
-          id: monthlyPayoutRequestId(item.userId, item.userRole, item.periodKey),
-          ...item,
-        },
-      });
-      created++;
-    } catch (error) {
-      // A concurrent invocation may have created the same deterministic
-      // request. Treat that one race as success; surface all other failures.
-      if ((error as { code?: string })?.code !== "P2002") throw error;
-    }
-  }
-
-  const result = {
-    success: true,
-    period: period.label,
-    sweep,
-    created,
-    updated: plan.update.length,
-    removed: plan.remove.length,
-    alreadyApproved: plan.skipApproved.length,
-  };
+  const result = { success: true, period: period.label, sweep, requests: touched };
   console.log(`[payout-sweep] ${period.key} completed`, result);
   return result;
 }

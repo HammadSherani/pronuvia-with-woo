@@ -85,6 +85,9 @@ export async function syncPendingPayoutRequest(
       where: { id: keepId },
       data: {
         amount: Number(amount.toFixed(2)),
+        // The statement lists wallet activity up to the snapshot: keep it in
+        // step with the amount
+        snapshotAt: new Date(),
         ...(options?.note ? { note: options.note } : {}),
       },
     });

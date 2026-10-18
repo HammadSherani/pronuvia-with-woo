@@ -104,7 +104,9 @@ export async function applyCommissionReview(orderId: string, raw: unknown): Prom
     const next     = e.status === "approved" ? CommissionReview.APPROVED : CommissionReview.REJECTED;
     // Approved with another amount = modified; never more than the order's items
     const amount = e.status === "approved" ? Math.min(e.amount, order.subtotal > 0 ? order.subtotal : order.total) : current;
-    if (review === next && amount === current) continue;
+    // No review yet (an older order) counts as approved: Woo's "approved"
+    // for it is no decision and must not make it look freshly approved
+    if ((review ?? CommissionReview.APPROVED) === next && amount === current) continue;
 
     data[f.review] = next;
     if (amount !== current) {

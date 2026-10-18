@@ -16,6 +16,7 @@ type OrderRow = {
   rate: number;
   refundedAt?: string;
   reason?: string | null;
+  reviewHref?: string;   // approve / reject on the WP order page
 };
 
 type UserInfo = {
@@ -156,6 +157,12 @@ function OrdersModal({
                   <tr key={o.orderNumber} className="hover:bg-gray-50/50">
                     <td className="px-5 py-3">
                       <span className="font-mono text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-1 rounded">#{o.orderNumber}</span>
+                      {o.reviewHref && (
+                        <a href={o.reviewHref} target="_blank" rel="noreferrer"
+                          className="block mt-1 text-[11px] font-medium text-[#3DBFA4] hover:underline">
+                          Review in WooCommerce ↗
+                        </a>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-xs text-gray-500">
                       {formatDate(o.createdAt)}
@@ -631,10 +638,10 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
         </div>
       </div>
 
-      {/* ══ 2. Pending Commission (current month) ════════════════════════════ */}
+      {/* ══ 2. Awaiting Approval (commissions not yet reviewed on the WP order page) ══ */}
       <div className="mb-8">
         <SectionHeader
-          title={`Pending Commission — ${monthLabel}`}
+          title="Awaiting Approval"
           count={currentMonth.length}
           countColor="bg-amber-100 text-amber-700 border-amber-200"
         />
@@ -647,7 +654,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
                 </svg>
               </div>
-              <p className="text-sm text-gray-400">No commission earned this month yet</p>
+              <p className="text-sm text-gray-400">No commissions awaiting approval</p>
             </div>
           ) : (
             <>
@@ -687,7 +694,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                       <td className="px-5 py-3.5 text-right">
                         <button
                           type="button"
-                          onClick={() => setOrdersModal({ name: entry.userName, period: monthLabel, orders: entry.orders })}
+                          onClick={() => setOrdersModal({ name: entry.userName, period: "Awaiting approval", orders: entry.orders })}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
