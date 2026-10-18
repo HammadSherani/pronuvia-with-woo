@@ -26,6 +26,7 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 - [ ] REST API key (WooCommerce → Settings → Advanced → REST API): Read/Write, ek admin user ke naam
 - [ ] HPOS ON (order links `admin.php?page=wc-orders&action=edit&id=` isi par chalte hain)
 - [ ] Purana "product update" webhook (khaali delivery URL) hata dein
+- [ ] **Pronuvia Commissions plugin** (order page par doctor / rep commission Approve / Reject / Modify): Plugins → Add New → Upload `wordpress/pronuvia-commissions.zip` → Activate. Faisla order webhook se Pronuvia mein aata hai; sirf approved commission payout mein jati hai
 - [ ] **Pronuvia SSO plugin** (dashboard se WP admin bina password): Plugins → Add New → Upload `wordpress/pronuvia-sso.zip` → Activate; `wp-config.php` mein `define( 'PRONUVIA_SSO_SECRET', '<WOO_SSO_SECRET wali value>' );`. Pronuvia admin aur WP admin user ka email ek hi ho (warna `define( 'PRONUVIA_SSO_USER', '<WP username>' );`)
 - [ ] Optional (WP developer): hamara order number WP admin mein (Sequential Order Numbers / snippet), "Shipped" status, coupon par "Kis ke liye" field
 

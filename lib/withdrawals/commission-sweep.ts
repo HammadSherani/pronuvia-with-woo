@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { getCurrentPeriod, type MonthlyPayoutPeriod } from "@/lib/withdrawals/monthly";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
+import { isApproved } from "@/lib/orders/commission-review";
+import { markCommissionPaidInWoo } from "@/lib/orders/commission-paid";
 
 export type CommissionSweepResult = {
   periodKey:          string;
@@ -33,11 +35,18 @@ export async function sweepCommissionPeriod(period: MonthlyPayoutPeriod): Promis
         { salesRepCommissionAmount:  { gt: 0 } },
         { physicianCommissionAmount: { gt: 0 } },
       ],
+      // Not while a commission still waits for the admin's review (the next
+      // payout takes it once reviewed). A missing review is an older order;
+      // Prisma's `not` on MongoDB leaves out missing fields, hence isSet.
+      AND: [
+        { OR: [{ salesRepCommissionReview:  { isSet: false } }, { salesRepCommissionReview:  null }, { salesRepCommissionReview:  { not: "AWAITING" } }] },
+        { OR: [{ physicianCommissionReview: { isSet: false } }, { physicianCommissionReview: null }, { physicianCommissionReview: { not: "AWAITING" } }] },
+      ],
     },
     select: {
-      id: true, orderNumber: true,
-      salesRepId: true, salesRepCommissionAmount: true, salesRepClawback: true,
-      physicianId: true, physicianCommissionAmount: true, physicianClawback: true,
+      id: true, orderNumber: true, wooOrderId: true,
+      salesRepId: true, salesRepCommissionAmount: true, salesRepClawback: true, salesRepCommissionReview: true,
+      physicianId: true, physicianCommissionAmount: true, physicianClawback: true, physicianCommissionReview: true,
     },
   });
 
@@ -45,8 +54,9 @@ export async function sweepCommissionPeriod(period: MonthlyPayoutPeriod): Promis
     return { periodKey: period.key, ordersSwept: 0, salesRepsCredited: 0, physiciansCredited: 0, totalCredited: 0 };
   }
 
-  const netRep = (o: (typeof orders)[number]) => (o.salesRepCommissionAmount  ?? 0) - (o.salesRepClawback  ?? 0);
-  const netDr  = (o: (typeof orders)[number]) => (o.physicianCommissionAmount ?? 0) - (o.physicianClawback ?? 0);
+  // A rejected commission pays nothing
+  const netRep = (o: (typeof orders)[number]) => isApproved(o.salesRepCommissionReview)  ? (o.salesRepCommissionAmount  ?? 0) - (o.salesRepClawback  ?? 0) : 0;
+  const netDr  = (o: (typeof orders)[number]) => isApproved(o.physicianCommissionReview) ? (o.physicianCommissionAmount ?? 0) - (o.physicianClawback ?? 0) : 0;
 
   const repCreditMap = new Map<string, number>();
   const drCreditMap  = new Map<string, number>();
@@ -108,6 +118,9 @@ export async function sweepCommissionPeriod(period: MonthlyPayoutPeriod): Promis
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await prisma.$transaction(ops as any);
+
+  // The WP Commissions box stops offering approve / reject once paid
+  await markCommissionPaidInWoo(orders.flatMap((o) => (o.wooOrderId ? [o.wooOrderId] : [])));
 
   const totalCredited = [...repCreditMap.values(), ...drCreditMap.values()].reduce((s, v) => s + v, 0);
 

@@ -46,7 +46,7 @@ export default async function PhysicianOrdersPage({
     shippingRate: true, shippingCarrier: true, trackingNumber: true,
     physicianCommissionRate: true, physicianCommissionAmount: true,
     status: true,
-    returnedTotal: true, physicianClawback: true,
+    returnedTotal: true, physicianClawback: true, physicianCommissionReview: true,
     paymentMethod: true, paymentStatus: true,
     transactionId: true,
   };
@@ -180,10 +180,16 @@ export default async function PhysicianOrdersPage({
                         )}
                       </td>
                       <td className="px-5 py-4">
-                        <span className="text-[#5BB8D4] font-semibold">{fmt(Math.max(0, o.physicianCommissionAmount - (o.physicianClawback ?? 0)))}</span>
+                        <span className="text-[#5BB8D4] font-semibold">{fmt(o.physicianCommissionReview === "REJECTED" ? 0 : Math.max(0, o.physicianCommissionAmount - (o.physicianClawback ?? 0)))}</span>
                         <span className="text-xs text-gray-400 ml-1">({o.physicianCommissionRate}%)</span>
-                        {(o.physicianClawback ?? 0) > 0 && (
+                        {(o.physicianClawback ?? 0) > 0 && o.physicianCommissionReview !== "REJECTED" && (
                           <span className="block text-[11px] text-orange-500">−{fmt(o.physicianClawback ?? 0)} refunded</span>
+                        )}
+                        {o.physicianCommissionReview === "AWAITING" && (
+                          <span className="block text-[11px] text-gray-500">Awaiting approval</span>
+                        )}
+                        {o.physicianCommissionReview === "REJECTED" && (
+                          <span className="block text-[11px] text-red-500">Rejected</span>
                         )}
                       </td>
                       <td className="px-5 py-4">

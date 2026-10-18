@@ -9,6 +9,7 @@ import {
 import { fromWooStatus, STATUS_META_KEY, toWooStatus } from "./woo-status";
 import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./woo-labels";
 import { importWooRefunds } from "./refunds";
+import { applyCommissionReview, REVIEW_META_KEY } from "./commission-review";
 import { wooFetch } from "@/lib/woo/client";
 
 // Orders live in WooCommerce; our Order record is the index the order lists,
@@ -210,6 +211,9 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
     ...(typeof phone === "string" && phone !== (order.customerPhone ?? "") && { customerPhone: phone || null }),
   };
   if (Object.keys(data).length) await prisma.order.update({ where: { id: order.id }, data });
+
+  // Commission approved / rejected / modified on the WP order page
+  await applyCommissionReview(order.id, metaValue(w, REVIEW_META_KEY));
 
   // Labels bought in WP admin (WooCommerce Shipping)
   await applyWooLabels(order.id, parseWooLabels(metaValue(w, LABELS_META_KEY)), async (label) => {
