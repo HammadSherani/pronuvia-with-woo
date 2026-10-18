@@ -5,6 +5,7 @@ import { WooError } from "@/lib/woo/client";
 import { getOrCreateWooCustomer } from "@/lib/woo/customers";
 import { addOrderNote, createWooOrder, findWooOrder, ORDER_ID_KEY, updateWooOrder, type WooOrderAddress } from "@/lib/woo/orders";
 import { STATUS_META_KEY, toWooStatus } from "./woo-status";
+import { NAME_META_KEYS, REVIEW_META_KEY, reviewMetaFor } from "./commission-review";
 
 // Every paid order is saved in our database first (with the wallet debit, if
 // any), then sent to WooCommerce here. A send that fails leaves the order
@@ -59,7 +60,13 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
   });
   if (claimed.count === 0) return { ok: false, skipped: true };
 
-  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+  const order = await prisma.order.findUniqueOrThrow({
+    where:   { id: orderId },
+    include: {
+      physician: { select: { firstName: true, lastName: true } },
+      salesRep:  { select: { name: true } },
+    },
+  });
   try {
     let woo = await findWooOrder(order.id, order.createdAt);
     let couponFallback = false;
@@ -109,6 +116,10 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
           pronuvia_stripe_payment_intent:       order.stripePaymentIntentId,
           pronuvia_customer_email:              order.customerEmail,
           pronuvia_customer_phone:              order.customerPhone,
+          // For the Commissions box on the WP order page
+          [NAME_META_KEYS.physician]:           order.physician ? `Dr. ${order.physician.firstName} ${order.physician.lastName}` : undefined,
+          [NAME_META_KEYS.sales_rep]:           order.salesRep?.name,
+          [REVIEW_META_KEY]:                    JSON.stringify(reviewMetaFor(order)),
         },
       });
 

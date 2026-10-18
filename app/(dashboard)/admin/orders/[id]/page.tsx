@@ -102,6 +102,31 @@ function carrierTrackingUrl(carrier: string | null | undefined, trackingNumber: 
   return `https://www.google.com/search?q=${encodeURIComponent(`${carrier ?? ""} tracking ${trackingNumber}`)}`;
 }
 
+// The admin's review of one commission (made on the WP order page)
+function CommissionReviewBadge({ review, amount, original, note, wooHref }: {
+  review: string | null; amount: number; original: number | null; note: string | null; wooHref: string | null;
+}) {
+  if (amount <= 0 && original == null) return null;
+  const modified = original != null && original !== amount;
+  const [label, cls] =
+    review === "AWAITING" ? ["Awaiting approval", "bg-amber-50 text-amber-700 border-amber-200"]
+    : review === "REJECTED" ? ["Rejected", "bg-red-50 text-red-600 border-red-200"]
+    : modified ? ["Modified", "bg-indigo-50 text-indigo-700 border-indigo-200"]
+    : ["Approved", "bg-emerald-50 text-emerald-700 border-emerald-200"];
+  return (
+    <div className="mt-2 space-y-1">
+      <span className={`inline-flex px-2 py-0.5 border rounded-full text-[10px] font-semibold ${cls}`}>{label}</span>
+      {modified && <p className="text-[11px] text-gray-400">was <span className="line-through">{fmtMoney(original!)}</span></p>}
+      {note && <p className="text-[11px] text-gray-500 italic">&ldquo;{note}&rdquo;</p>}
+      {review === "AWAITING" && wooHref && (
+        <a href={wooHref} target="_blank" rel="noreferrer" className="block text-[11px] font-medium text-[#3DBFA4] hover:underline">
+          Review in WooCommerce ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
 const statusStyle: Record<OrderStatus, string> = {
   PENDING: "bg-amber-50   text-amber-700   border-amber-200",
   PROCESSING: "bg-blue-50    text-blue-700    border-blue-200",
@@ -168,6 +193,8 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   }
 
   const alreadyRefunded = items.map((_, idx) => refundQtyByIdx.get(idx) ?? 0);
+  const reviewNote = (role: "physician" | "salesRep") =>
+    (order.commissionReviewNotes as Record<string, { note?: string | null }> | null)?.[role]?.note || null;
   const allItemsFullyRefunded = items.length > 0 && items.every((item, idx) => (refundQtyByIdx.get(idx) ?? 0) >= item.quantity);
   const isReturned = !!order.returnedAt;
   const customerPhone: string | null = order.customerPhone ?? null;
@@ -668,6 +695,9 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                 {(order.salesRepClawback ?? 0) > 0 && (
                   <p className="text-xs text-orange-500 font-medium mt-0.5">−{fmtMoney(order.salesRepClawback!)} clawed back</p>
                 )}
+                <CommissionReviewBadge review={order.salesRepCommissionReview} amount={order.salesRepCommissionAmount}
+                  original={order.salesRepCommissionOriginal} note={reviewNote("salesRep")}
+                  wooHref={order.wooOrderId ? wpAdmin.editOrder(order.wooOrderId) : null} />
               </div>
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 border-l-2 border-l-[#8b5cf6]">
                 <p className="text-xs text-gray-400 font-medium mb-1">Doctor Commission</p>
@@ -679,6 +709,9 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                 {(order.physicianClawback ?? 0) > 0 && (
                   <p className="text-xs text-orange-500 font-medium mt-0.5">−{fmtMoney(order.physicianClawback!)} clawed back</p>
                 )}
+                <CommissionReviewBadge review={order.physicianCommissionReview} amount={order.physicianCommissionAmount}
+                  original={order.physicianCommissionOriginal} note={reviewNote("physician")}
+                  wooHref={order.wooOrderId ? wpAdmin.editOrder(order.wooOrderId) : null} />
               </div>
             </div>
 

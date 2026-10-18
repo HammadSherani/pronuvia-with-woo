@@ -81,6 +81,9 @@ export async function confirmPhysicianCardOrder(
       data: {
         orderNumber,
         status: "PROCESSING",
+        // Each commission waits for the admin's review on the WP order page
+        ...(physicianCommissionAmount > 0 && { physicianCommissionReview: "AWAITING" as const }),
+        ...(salesRepCommissionAmount  > 0 && { salesRepCommissionReview:  "AWAITING" as const }),
         physicianId: session.userId,
         salesRepId:  physician?.salesRepId ?? null,
         items:       items as object[],

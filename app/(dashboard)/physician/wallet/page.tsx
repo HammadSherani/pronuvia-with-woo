@@ -30,11 +30,21 @@ type OrderRow = {
   physicianCommissionRate: number | null;
   physicianCommissionAmount: number | null;
   physicianClawback: number | null;
+  physicianCommissionReview: string | null;
+  physicianCommissionOriginal: number | null;
+  commissionReviewNotes: unknown;
 };
 
 // Commission left after refunds took part of it back
 function netOf(o: OrderRow): number {
+  if (o.physicianCommissionReview === "REJECTED") return 0;
   return Math.max(0, (o.physicianCommissionAmount ?? 0) - (o.physicianClawback ?? 0));
+}
+
+// The admin's note on this commission (WP order page review)
+function reviewNoteOf(o: OrderRow): string | null {
+  const n = (o.commissionReviewNotes as Record<string, { note?: string | null }> | null)?.["physician"];
+  return n?.note || null;
 }
 
 function CommissionTable({ orders }: { orders: OrderRow[] }) {
@@ -75,6 +85,12 @@ function CommissionTable({ orders }: { orders: OrderRow[] }) {
               <span className="text-sm font-bold text-gray-800">
                 {fmt(netOf(o))}
               </span>
+              {o.physicianCommissionOriginal != null && o.physicianCommissionOriginal !== o.physicianCommissionAmount && (
+                <span className="block text-[11px] text-indigo-500">
+                  <span className="line-through text-gray-400 mr-1">{fmt(o.physicianCommissionOriginal)}</span>
+                  Modified{reviewNoteOf(o) ? `: ${reviewNoteOf(o)}` : ""}
+                </span>
+              )}
               {(o.physicianClawback ?? 0) > 0 && (
                 <span className="block text-[11px] text-orange-500">
                   <span className="line-through text-gray-400 mr-1">{fmt(o.physicianCommissionAmount ?? 0)}</span>
@@ -173,6 +189,9 @@ export default async function PhysicianCommissionPage() {
         physicianCommissionRate:   true,
         physicianCommissionAmount: true,
         physicianClawback: true,
+        physicianCommissionReview: true,
+        physicianCommissionOriginal: true,
+        commissionReviewNotes: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -197,11 +216,17 @@ export default async function PhysicianCommissionPage() {
   // whole commission taken back by refunds. A partly refunded order stays
   // pending / paid with the commission that is left.
   const CLOSED = new Set(["REFUNDED", "CANCELLED"]);
+  // Awaiting: not yet approved by the admin (WP order page). Rejected also
+  // covers commissions the admin rejected.
+  const isAwaiting = (o: (typeof earningOrders)[number]) =>
+    !o.commissionPaid && !CLOSED.has(o.status) && o.physicianCommissionReview === "AWAITING";
   const isRejected = (o: (typeof earningOrders)[number]) =>
-    (!o.commissionPaid && CLOSED.has(o.status)) || ((o.physicianCommissionAmount ?? 0) > 0 && netOf(o) <= 0);
-  const paidOrders     = earningOrders.filter((o) => !isRejected(o) && o.commissionPaid);
+    !isAwaiting(o) && (o.physicianCommissionReview === "REJECTED" || (!o.commissionPaid && CLOSED.has(o.status)) || ((o.physicianCommissionAmount ?? 0) > 0 && netOf(o) <= 0));
+  const awaitingOrders = earningOrders.filter((o) => isAwaiting(o));
+  const paidOrders     = earningOrders.filter((o) => !isRejected(o) && !isAwaiting(o) && o.commissionPaid);
   const reversedOrders = earningOrders.filter((o) => isRejected(o));
-  const pendingOrders  = earningOrders.filter((o) => !isRejected(o) && !o.commissionPaid);
+  const pendingOrders  = earningOrders.filter((o) => !isRejected(o) && !isAwaiting(o) && !o.commissionPaid);
+  const totalAwaiting  = awaitingOrders.reduce((s, o) => s + netOf(o), 0);
 
   const totalPaid     = paidOrders.reduce((s, o)     => s + netOf(o), 0);
   const totalPending  = pendingOrders.reduce((s, o)  => s + netOf(o), 0);
@@ -234,6 +259,27 @@ export default async function PhysicianCommissionPage() {
         bankAccountNumber={physician?.bankAccountNumber}
         bankAccountName={physician?.bankAccountName}
       />
+
+      {/* Awaiting approval */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-3">
+          <h2 className="text-sm font-bold text-gray-700">Awaiting Approval</h2>
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+            {awaitingOrders.length}
+          </span>
+          {awaitingOrders.length > 0 && (
+            <span className="text-xs text-gray-500 font-medium ml-auto">
+              {fmt(totalAwaiting)} waiting for admin approval
+            </span>
+          )}
+        </div>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {awaitingOrders.length === 0
+            ? <EmptySection message="No commissions awaiting approval" />
+            : <CommissionTable orders={awaitingOrders} />
+          }
+        </div>
+      </div>
 
       {/* Pending Commission */}
       <div className="mb-8">
@@ -324,6 +370,11 @@ export default async function PhysicianCommissionPage() {
                         <span className="text-sm font-bold text-red-400 line-through">
                           {fmt(o.physicianCommissionAmount ?? 0)}
                         </span>
+                        {o.physicianCommissionReview === "REJECTED" && (
+                          <span className="block text-[11px] text-red-500 mt-0.5">
+                            Rejected by admin{reviewNoteOf(o) ? `: ${reviewNoteOf(o)}` : ""}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

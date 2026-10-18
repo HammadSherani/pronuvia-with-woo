@@ -39,7 +39,7 @@ export default async function SalesDashboardPage() {
         commissionPaid: false,
         status: { notIn: ["REFUNDED", "CANCELLED"] },
       },
-      select: { id: true, salesRepCommissionAmount: true, salesRepClawback: true },
+      select: { id: true, salesRepCommissionAmount: true, salesRepClawback: true, salesRepCommissionReview: true },
     }),
     prisma.withdrawRequest.aggregate({
       where: { userId: session.userId, userRole: "SALES_REP", status: "APPROVED" },
@@ -47,8 +47,10 @@ export default async function SalesDashboardPage() {
     }).then((r) => r._sum.amount ?? 0),
   ]);
 
-  // A partly refunded order still pays what is left of its commission
+  // A partly refunded order still pays what is left of its commission;
+  // only commission the admin approved counts
   const totalPending = pendingCommissionOrders
+    .filter((o) => o.salesRepCommissionReview !== "AWAITING" && o.salesRepCommissionReview !== "REJECTED")
     .reduce((sum, o) => sum + Math.max(0, (o.salesRepCommissionAmount ?? 0) - (o.salesRepClawback ?? 0)), 0);
   const totalCommission = totalPending + totalPaidOut;
 

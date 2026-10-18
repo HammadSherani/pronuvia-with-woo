@@ -9,7 +9,7 @@ export type PayoutStatementOrder = {
   rate: number;
   description?: string | null;
   // Fully refunded / cancelled in the payout's month: listed at $0, not paid
-  excluded?: "Refunded" | "Cancelled" | null;
+  excluded?: "Refunded" | "Cancelled" | "Rejected" | null;
 };
 
 /**
@@ -50,8 +50,8 @@ async function unpaidPeriodOrders(
     },
     select: {
       orderNumber: true, createdAt: true, status: true,
-      salesRepCommissionAmount: true, salesRepCommissionRate: true, salesRepClawback: true,
-      physicianCommissionAmount: true, physicianCommissionRate: true, physicianClawback: true,
+      salesRepCommissionAmount: true, salesRepCommissionRate: true, salesRepClawback: true, salesRepCommissionReview: true,
+      physicianCommissionAmount: true, physicianCommissionRate: true, physicianClawback: true, physicianCommissionReview: true,
     },
   });
   return orders.flatMap((o) => {
@@ -59,7 +59,9 @@ async function unpaidPeriodOrders(
     const left = isPhysician
       ? o.physicianCommissionAmount - (o.physicianClawback ?? 0)
       : o.salesRepCommissionAmount - (o.salesRepClawback ?? 0);
-    const excluded = o.status === "CANCELLED" ? "Cancelled" as const
+    const review = isPhysician ? o.physicianCommissionReview : o.salesRepCommissionReview;
+    const excluded = review === "REJECTED" ? "Rejected" as const
+      : o.status === "CANCELLED" ? "Cancelled" as const
       : o.status === "REFUNDED" || left <= 0.004 ? "Refunded" as const
       : null;
     if (!excluded) return [];   // still to be paid in a later payout
@@ -183,15 +185,20 @@ async function paidStatementOrders({
       salesRepCommissionAmount: true,
       salesRepCommissionRate: true,
       salesRepClawback: true,
+      salesRepCommissionReview: true,
       physicianCommissionAmount: true,
       physicianCommissionRate: true,
       physicianClawback: true,
+      physicianCommissionReview: true,
     },
     orderBy: { createdAt: "asc" },
   });
 
-  // What was paid: the commission less what refunds took back
-  const legacyStatementOrders = legacyOrders.map((order) => ({
+  // What was paid: the commission less what refunds took back (nothing for
+  // a rejected one, listed at $0 by unpaidPeriodOrders)
+  const legacyStatementOrders = legacyOrders.filter((order) =>
+    (userRole === "PHYSICIAN" ? order.physicianCommissionReview : order.salesRepCommissionReview) !== "REJECTED",
+  ).map((order) => ({
     orderNumber: order.orderNumber,
     createdAt: order.createdAt,
     amount: Number(Math.max(0, userRole === "PHYSICIAN"

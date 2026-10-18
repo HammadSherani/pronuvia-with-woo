@@ -79,6 +79,8 @@ export async function confirmCardOrder(
       data: {
         orderNumber,
         status: "PROCESSING",
+        // The commission waits for the admin's review on the WP order page
+        ...(commissionAmount > 0 && { salesRepCommissionReview: "AWAITING" as const }),
         salesRepId: session.userId,
         items:      items as object[],
         subtotal,
