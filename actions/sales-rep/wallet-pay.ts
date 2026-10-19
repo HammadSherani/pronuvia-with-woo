@@ -10,7 +10,7 @@ import { estimatedDeliveryDate } from "@/lib/utils/shipping";
 import { generateOrderNumber } from "@/lib/orders/order-number";
 import { priceOrder } from "@/lib/checkout/price-order";
 import { sendMail } from "@/lib/email/mailer";
-import { orderConfirmationEmail, newOrderNotificationEmail } from "@/lib/email/templates";
+import { orderConfirmationEmail, orderPageLink, newOrderNotificationEmail } from "@/lib/email/templates";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
 
 export type WalletPayState = {
@@ -122,7 +122,7 @@ export async function payWithWallet(
 
   if (customerEmail) {
     try {
-      const { subject, html } = orderConfirmationEmail({
+      const emailData = {
         orderNumber,
         firstName:       rep?.firstName ?? "Medical Rep",
         total,
@@ -145,9 +145,14 @@ export async function payWithWallet(
         notes:           notes           || null,
         orderDate:       new Date(),
         customerPhone:   customerPhone   || null,
-      });
-      const bcc = rep?.email && rep.email !== customerEmail ? [rep.email] : [];
-      await sendMail({ to: customerEmail, bcc: bcc.length ? bcc : undefined, subject, html, type: "Order Confirmation", relatedId: orderNumber });
+      };
+      const { subject, html } = orderConfirmationEmail(emailData);
+      await sendMail({ to: customerEmail, subject, html, type: "Order Confirmation", relatedId: orderNumber });
+      // The medical rep's copy, with a button to the order in their account
+      if (rep?.email && rep.email !== customerEmail) {
+        const copy = orderConfirmationEmail({ ...emailData, viewOrderLink: orderPageLink("SALES_REP", orderNumber) });
+        await sendMail({ to: rep.email, subject: copy.subject, html: copy.html, type: "Order Confirmation", relatedId: orderNumber });
+      }
     } catch (err) {
       console.error("[sales-rep wallet] confirmation email failed:", err);
     }

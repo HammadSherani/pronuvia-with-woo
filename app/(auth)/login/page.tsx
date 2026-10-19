@@ -7,7 +7,9 @@ export const metadata = {
   title: "Login – Pronuvia",
 };
 
-export default function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  // A page opened from an email link while logged out comes back here after login
+  const { next } = await searchParams;
   return (
     <div className="w-full  rounded-xl overflow-hidden  flex min-h-screen">
       {/* ── Left panel — branded (no external image needed) ── */}
@@ -50,7 +52,7 @@ export default function LoginPage() {
       {/* ── Right panel ── */}
       <div className="flex-1 bg-[#f7f8f9] flex flex-col items-center justify-center px-10 py-12">
         <div className="w-full max-w-[340px]">
-          <LoginForm />
+          <LoginForm next={typeof next === "string" ? next : undefined} />
         </div>
         
         <Link

@@ -11,7 +11,7 @@ import { requirePhysician } from "@/lib/auth/dal";
 import { estimatedDeliveryDate } from "@/lib/utils/shipping";
 import { generateOrderNumber } from "@/lib/orders/order-number";
 import { sendMail } from "@/lib/email/mailer";
-import { orderConfirmationEmail, newOrderNotificationEmail } from "@/lib/email/templates";
+import { orderConfirmationEmail, orderPageLink, newOrderNotificationEmail } from "@/lib/email/templates";
 
 export type ConfirmPhysicianCardOrderPayload = {
   paymentIntentId: string;
@@ -136,7 +136,7 @@ export async function confirmPhysicianCardOrder(
   // Send order confirmation email: To = customer email, CC = physician's registered email
   if (customerEmail) {
     try {
-      const { subject, html } = orderConfirmationEmail({
+      const emailData = {
         orderNumber,
         firstName:       physician?.firstName ?? "Doctor",
         total,
@@ -161,10 +161,14 @@ export async function confirmPhysicianCardOrder(
         customerPhone:   customerPhone   || null,
         doctorFirstName: physician?.firstName    || null,
         doctorLastName:  physician?.lastName      || null,
-      });
-      const bcc = physician?.email && physician.email !== customerEmail ? [physician.email] : [];
-      console.log("[physician order] sending confirmation email to:", customerEmail, "| bcc:", bcc);
-      await sendMail({ to: customerEmail, bcc: bcc.length ? bcc : undefined, subject, html, type: "Order Confirmation", relatedId: orderNumber });
+      };
+      const { subject, html } = orderConfirmationEmail(emailData);
+      await sendMail({ to: customerEmail, subject, html, type: "Order Confirmation", relatedId: orderNumber });
+      // The doctor's copy, with a button to the order in their account
+      if (physician?.email && physician.email !== customerEmail) {
+        const copy = orderConfirmationEmail({ ...emailData, viewOrderLink: orderPageLink("PHYSICIAN", orderNumber) });
+        await sendMail({ to: physician.email, subject: copy.subject, html: copy.html, type: "Order Confirmation", relatedId: orderNumber });
+      }
       console.log("[physician order] confirmation email sent successfully");
     } catch (err) {
       console.error("[physician order] confirmation email FAILED:", err);

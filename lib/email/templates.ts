@@ -547,6 +547,11 @@ function orderItemsTable(items: OrderItem[]) {
     </table>`;
 }
 
+/** The order's page in the rep's / doctor's account (logged out: login first, then back here). */
+export function orderPageLink(role: "SALES_REP" | "PHYSICIAN", orderNumber: string): string {
+  return `${getAppUrl()}/${role === "SALES_REP" ? "sales" : "physician"}/orders/${encodeURIComponent(orderNumber)}`;
+}
+
 export type OrderEmailData = {
   orderNumber:        string;
   firstName:          string;
@@ -557,6 +562,8 @@ export type OrderEmailData = {
   shippingCarrier?:   string | null;
   estimatedDelivery?: Date | null;
   isPatientEmail?:    boolean;
+  // The rep's / doctor's copy: a View Order button to the order in their account
+  viewOrderLink?:     string | null;
   shippingCost?:      number;
   // The option selected at checkout, e.g. "FedEx 2Day Shipping" — distinct
   // from shippingCarrier, which is only set once a label is actually bought.
@@ -737,7 +744,7 @@ export function orderConfirmationEmail(d: OrderEmailData) {
              </p>`
       )}
 
-      ${d.isPatientEmail ? "" : btn(orderStatusLink, "View Order Status")}
+      ${d.viewOrderLink ? btn(d.viewOrderLink, "View Order") : d.isPatientEmail ? "" : btn(orderStatusLink, "View Order Status")}
 
       ${sectionLabel("Need Help?")}
       <p style="margin:0 0 24px;font-size:13px;color:${C.textSoft};line-height:1.7;">

@@ -61,7 +61,13 @@ export async function proxy(request: NextRequest) {
   // Role-based route protection
   for (const [role, prefixes] of Object.entries(ROLE_ROUTES)) {
     if (prefixes.some((p) => pathname.startsWith(p))) {
-      if (!session || session.role !== role) {
+      // Logged out (e.g. an order link in an email): log in, then come back
+      if (!session) {
+        const login = new URL("/login", request.url);
+        login.searchParams.set("next", pathname + request.nextUrl.search);
+        return NextResponse.redirect(login);
+      }
+      if (session.role !== role) {
         return NextResponse.redirect(new URL("/unauthorized", request.url));
       }
     }

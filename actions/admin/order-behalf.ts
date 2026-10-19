@@ -11,7 +11,7 @@ import { requireAdmin } from "@/lib/auth/dal";
 import { estimatedDeliveryDate } from "@/lib/utils/shipping";
 import { generateOrderNumber } from "@/lib/orders/order-number";
 import { sendMail } from "@/lib/email/mailer";
-import { orderConfirmationEmail } from "@/lib/email/templates";
+import { orderConfirmationEmail, orderPageLink } from "@/lib/email/templates";
 
 export type ConfirmBehalfOrderPayload = {
   physicianId:     string;
@@ -137,7 +137,7 @@ export async function confirmBehalfCardOrder(
   // Send confirmation email to patient; CC physician
   if (customerEmail) {
     try {
-      const { subject, html } = orderConfirmationEmail({
+      const emailData = {
         orderNumber,
         firstName:       physician?.firstName ?? "Doctor",
         total,
@@ -163,9 +163,14 @@ export async function confirmBehalfCardOrder(
         customerPhone:   customerPhone   || null,
         doctorFirstName: physician?.firstName    || null,
         doctorLastName:  physician?.lastName      || null,
-      });
-      const bcc = physician?.email && physician.email !== customerEmail ? [physician.email] : [];
-      await sendMail({ to: customerEmail, bcc: bcc.length ? bcc : undefined, subject, html, type: "Order Confirmation", relatedId: orderNumber });
+      };
+      const { subject, html } = orderConfirmationEmail(emailData);
+      await sendMail({ to: customerEmail, subject, html, type: "Order Confirmation", relatedId: orderNumber });
+      // The doctor's copy, with a button to the order in their account
+      if (physician?.email && physician.email !== customerEmail) {
+        const copy = orderConfirmationEmail({ ...emailData, viewOrderLink: orderPageLink("PHYSICIAN", orderNumber) });
+        await sendMail({ to: physician.email, subject: copy.subject, html: copy.html, type: "Order Confirmation", relatedId: orderNumber });
+      }
     } catch (err) {
       console.error("[behalf order] confirmation email failed:", err);
     }

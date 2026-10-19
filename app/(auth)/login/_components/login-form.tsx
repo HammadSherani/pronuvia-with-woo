@@ -5,12 +5,13 @@ import Link from "next/link";
 import { login } from "@/actions/auth/login";
 import { PronuviaLogo } from "@/components/pronuvia-logo";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const [state, action, pending] = useActionState(login, undefined);
   const [showPassword, setShowPassword] = useState(false);
 
   return (
     <form action={action} className="flex flex-col items-center w-full">
+      {next && <input type="hidden" name="next" value={next} />}
       {/* Logo */}
       {/* <div className="mb-7">
         <PronuviaLogo size={34} />
