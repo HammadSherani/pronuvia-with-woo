@@ -348,7 +348,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                     {order.wooOrderId ? (
                       <a href={wpAdmin.editOrder(order.wooOrderId)} target="_blank" rel="noreferrer"
                         className="inline-block mt-1.5 text-xs font-medium text-[#3DBFA4] hover:underline">
-                        WooCommerce order #{order.wooOrderId} ↗
+                        WooCommerce order ↗
                       </a>
                     ) : order.wooSyncStatus ? (
                       <p className="mt-1.5 text-xs text-amber-700">
