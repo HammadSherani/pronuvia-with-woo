@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.1.0
+ * Version:     1.2.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -11,17 +11,23 @@
  * original). This box shows them; an admin decision is saved back into that
  * meta with an order note, and the order save makes WooCommerce notify
  * Pronuvia (order.updated webhook), which pays only approved commission.
- * Once Pronuvia has paid the commission (`pronuvia_commission_paid` = yes),
- * it can no longer be approved / rejected / modified, but the admin can
- * "Refund commission": take back any part of it (e.g. after the order was
- * refunded). Pronuvia takes that off the user's wallet (which may go below
- * zero) and lists it under Rejected Commission.
+ *
+ * Once every commission on the order is reviewed it goes into the wallets and
+ * Commission Payout (`pronuvia_commission_paid` = yes, "in payout"). It can
+ * still be approved / rejected / modified as often as needed: Pronuvia moves
+ * the wallet by the difference. When the user's payout is approved in
+ * Pronuvia, that row is paid out (`pronuvia_commission_paid_out`, a JSON list
+ * of roles) and fixed; the admin can then only "Refund commission": take back
+ * any part of it (e.g. after the order was refunded). Pronuvia takes that off
+ * the user's wallet (which may go below zero) and lists it under Rejected
+ * Commission.
  */
 
 defined( 'ABSPATH' ) || exit;
 
 const PRONUVIA_COMM_REVIEW_KEY = 'pronuvia_commission_review';
 const PRONUVIA_COMM_PAID_KEY   = 'pronuvia_commission_paid';
+const PRONUVIA_COMM_OUT_KEY    = 'pronuvia_commission_paid_out';
 const PRONUVIA_COMM_NONCE      = 'pronuvia_commission_review';
 
 function pronuvia_comm_roles() {
@@ -45,12 +51,27 @@ function pronuvia_comm_read( $order ) {
 	return is_array( $val ) ? $val : array();
 }
 
-/** Paid by Pronuvia, or the order no longer earns commission. */
-function pronuvia_comm_locked( $order ) {
-	if ( $order->get_meta( PRONUVIA_COMM_PAID_KEY ) === 'yes' ) {
-		return 'Paid';
+/** In the wallets / Commission Payout (still changeable until paid out). */
+function pronuvia_comm_in_payout( $order ) {
+	return $order->get_meta( PRONUVIA_COMM_PAID_KEY ) === 'yes';
+}
+
+/** Roles whose payout Pronuvia has approved. */
+function pronuvia_comm_paid_out( $order ) {
+	$raw = $order->get_meta( PRONUVIA_COMM_OUT_KEY );
+	$val = is_array( $raw ) ? $raw : json_decode( (string) $raw, true );
+	return is_array( $val ) ? array_values( array_filter( $val, 'is_string' ) ) : array();
+}
+
+/**
+ * Why a row can't be approved / rejected / modified: paid out, or the order
+ * no longer earns commission and none of it is in payout. False when open.
+ */
+function pronuvia_comm_locked( $order, $role ) {
+	if ( in_array( $role, pronuvia_comm_paid_out( $order ), true ) ) {
+		return 'Paid out';
 	}
-	if ( in_array( $order->get_status(), array( 'cancelled', 'refunded', 'trash' ), true ) ) {
+	if ( ! pronuvia_comm_in_payout( $order ) && in_array( $order->get_status(), array( 'cancelled', 'refunded', 'trash' ), true ) ) {
 		return 'Order ' . $order->get_status();
 	}
 	return false;
@@ -70,8 +91,10 @@ function pronuvia_comm_box( $post_or_order ) {
 		echo '<p>Not a Pronuvia order.</p>';
 		return;
 	}
-	$review = pronuvia_comm_read( $order );
-	$locked = pronuvia_comm_locked( $order );
+	$review    = pronuvia_comm_read( $order );
+	$in_payout = pronuvia_comm_in_payout( $order );
+	$any_out   = false;
+	$any_open  = false;
 	$date   = $order->get_date_created() ? $order->get_date_created()->date_i18n( 'Y-m-d H:i:s' ) : '';
 
 	if ( ! $review ) {
@@ -94,6 +117,10 @@ function pronuvia_comm_box( $post_or_order ) {
 			$original = isset( $e['original'] ) ? (float) $e['original'] : $amount;
 			$status   = (string) ( $e['status'] ?? 'pending' );
 			$name     = (string) $order->get_meta( $info['name_key'] );
+			$locked   = pronuvia_comm_locked( $order, $role );
+			$any_out  = $any_out || 'Paid out' === $locked;
+			$any_open = $any_open || ! $locked;
+			$shown    = 'Paid out' === $locked ? 'paid out' : ( $in_payout && 'pending' !== $status ? $status . ' (in payout)' : $status );
 			?>
 			<tr data-role="<?php echo esc_attr( $role ); ?>">
 				<td><?php echo esc_html( $name ? $name : $info['label'] ); ?><br><small><?php echo esc_html( $info['label'] ); ?></small></td>
@@ -105,7 +132,7 @@ function pronuvia_comm_box( $post_or_order ) {
 				</td>
 				<td><?php echo esc_html( $date ); ?></td>
 				<td>
-					<strong><?php echo esc_html( $locked === 'Paid' ? 'paid' : $status ); ?></strong>
+					<strong><?php echo esc_html( $shown ); ?></strong>
 					<?php if ( ! empty( $e['note'] ) ) : ?><br><small><?php echo esc_html( $e['note'] ); ?></small><?php endif; ?>
 					<?php if ( ! empty( $e['by'] ) ) : ?><br><small>by <?php echo esc_html( $e['by'] ); ?></small><?php endif; ?>
 					<?php foreach ( (array) ( $e['refunds'] ?? array() ) as $r ) : ?>
@@ -115,7 +142,7 @@ function pronuvia_comm_box( $post_or_order ) {
 				<td>
 					<?php
 					$left = round( $amount - pronuvia_comm_refunded( $e ), 2 );
-					if ( $locked === 'Paid' && $status === 'approved' && $left > 0 ) : ?>
+					if ( 'Paid out' === $locked && 'approved' === $status && $left > 0 ) : ?>
 						<p style="margin:0 0 6px">
 							<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( number_format( $left, 2, '.', '' ) ); ?>" class="pc-amount" style="width:90px" placeholder="<?php echo esc_attr( number_format( $left, 2, '.', '' ) ); ?>">
 							<button type="button" class="button" data-decision="refund">Refund commission</button>
@@ -140,10 +167,15 @@ function pronuvia_comm_box( $post_or_order ) {
 		<?php endforeach; ?>
 		</tbody>
 	</table>
-	<?php if ( ! $locked ) : ?>
-		<p class="description">An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed.</p>
-	<?php elseif ( $locked === 'Paid' ) : ?>
-		<p class="description">This commission is paid. Refunding the order does not take it back: use Refund commission for the part to take back.</p>
+	<?php if ( $any_open ) : ?>
+		<p class="description">
+			<?php echo $in_payout
+				? 'This commission is in Commission Payout in Pronuvia. It can still be approved, rejected or modified until the payout is approved there; the wallet follows each change.'
+				: 'An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed. It can be changed until the payout is approved there.'; ?>
+		</p>
+	<?php endif; ?>
+	<?php if ( $any_out ) : ?>
+		<p class="description">Paid out commission can no longer be changed. Refunding the order does not take it back: use Refund commission for the part to take back.</p>
 	<?php endif; ?>
 	<script>
 	( function () {
@@ -254,11 +286,12 @@ function pronuvia_comm_ajax() {
 	if ( ! $order || ! $order->get_meta( 'pronuvia_order_id' ) ) {
 		wp_send_json_error( array( 'message' => 'Order not found.' ), 404 );
 	}
-	$locked   = pronuvia_comm_locked( $order );
+	$role     = sanitize_key( wp_unslash( $_POST['role'] ?? '' ) );
+	$locked   = pronuvia_comm_locked( $order, $role );
 	$decision = sanitize_key( wp_unslash( $_POST['decision'] ?? '' ) );
 	if ( 'refund' === $decision ) {
-		if ( $locked !== 'Paid' ) {
-			wp_send_json_error( array( 'message' => 'Only a commission already paid can be refunded.' ), 409 );
+		if ( 'Paid out' !== $locked ) {
+			wp_send_json_error( array( 'message' => 'Only a paid out commission can be refunded. Before the payout, reject or modify it instead.' ), 409 );
 		}
 	} elseif ( $locked ) {
 		wp_send_json_error( array( 'message' => 'This commission can no longer be changed (' . $locked . ').' ), 409 );
@@ -267,7 +300,7 @@ function pronuvia_comm_ajax() {
 	$user   = wp_get_current_user();
 	$result = pronuvia_comm_decide(
 		pronuvia_comm_read( $order ),
-		sanitize_key( wp_unslash( $_POST['role'] ?? '' ) ),
+		$role,
 		$decision,
 		wp_unslash( $_POST['amount'] ?? '' ),
 		sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) ),

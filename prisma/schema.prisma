@@ -238,6 +238,13 @@ model Order {
   physicianCommissionOriginal Float?
   salesRepCommissionOriginal  Float?
   commissionReviewNotes       Json?    // { physician?: {note, at, by}, salesRep?: {...} }
+  // When the reviewed commission went into the wallets (Commission Payout).
+  // Until the user's payout is approved it can still be changed on WP; the
+  // approval sets *PaidOutAt for that role, and from then on only "Refund
+  // commission" applies.
+  commissionCreditedAt         DateTime?
+  physicianCommissionPaidOutAt DateTime?
+  salesRepCommissionPaidOutAt  DateTime?
 
   createdAt                 DateTime             @default(now())
   updatedAt                 DateTime             @updatedAt

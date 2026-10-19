@@ -2,12 +2,12 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { parseReviewMeta } from "@/lib/orders/commission-review";
-import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
+import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
 
 /**
  * Commission the admin took back on the WP order page ("Refund commission")
- * after it was approved and paid into the wallet. Each refund (by its WP id)
+ * after the user's payout of it was approved (paid out). Each refund (by its WP id)
  * applies once: it comes off the wallet, which may go below zero, adds to the
  * order's clawback (so the remaining commission is what is left), and the
  * user's pending payout request follows the wallet. Never more than the
@@ -18,18 +18,20 @@ export async function applyCommissionRefunds(orderId: string, raw: unknown): Pro
   if (!meta) return 0;
   let applied = 0;
 
-  for (const [key, role, idField, amountField, clawField] of [
-    ["physician", "PHYSICIAN", "physicianId", "physicianCommissionAmount", "physicianClawback"],
-    ["sales_rep", "SALES_REP", "salesRepId", "salesRepCommissionAmount", "salesRepClawback"],
+  for (const [key, role, idField, amountField, clawField, paidOutField] of [
+    ["physician", "PHYSICIAN", "physicianId", "physicianCommissionAmount", "physicianClawback", "physicianCommissionPaidOutAt"],
+    ["sales_rep", "SALES_REP", "salesRepId", "salesRepCommissionAmount", "salesRepClawback", "salesRepCommissionPaidOutAt"],
   ] as const) {
     for (const r of meta[key]?.refunds ?? []) {
       const order = await prisma.order.findUniqueOrThrow({
         where:  { id: orderId },
         select: { orderNumber: true, commissionPaid: true, physicianId: true, salesRepId: true,
-                  physicianCommissionAmount: true, physicianClawback: true, salesRepCommissionAmount: true, salesRepClawback: true },
+                  physicianCommissionAmount: true, physicianClawback: true, salesRepCommissionAmount: true, salesRepClawback: true,
+                  physicianCommissionPaidOutAt: true, salesRepCommissionPaidOutAt: true },
       });
       const userId = order[idField];
-      if (!order.commissionPaid || !userId) continue;   // only once it is in the wallet
+      // Only once paid out: before that the admin rejects / modifies it instead
+      if (!order.commissionPaid || !order[paidOutField] || !userId) continue;
       const left = Math.max(0, order[amountField] - (order[clawField] ?? 0));
       const amount = Number(Math.min(r.amount, left).toFixed(2));
       if (amount <= 0) continue;
@@ -44,18 +46,13 @@ export async function applyCommissionRefunds(orderId: string, raw: unknown): Pro
         throw e;
       }
 
-      const model = (role === "PHYSICIAN" ? prisma.partneringPhysician : prisma.salesRepresentative) as unknown as typeof prisma.salesRepresentative;
-      const { walletBalance } = await model.update({ where: { id: userId }, data: { walletBalance: { increment: -amount } }, select: { walletBalance: true } });
-      const balance = Number(walletBalance.toFixed(2));
-      if (balance !== walletBalance) await model.updateMany({ where: { id: userId, walletBalance }, data: { walletBalance: balance } });
-      await prisma.order.update({ where: { id: orderId }, data: { [clawField]: { increment: amount } } });
-      await prisma.walletTransaction.create({
-        data: {
-          userId, userRole: role, amount, type: "DEBIT",
-          description: `Commission refunded — order #${order.orderNumber}${r.note ? ` (${r.note})` : ""}`,
-          orderId, periodKey: getCurrentPeriod(new Date(), process.env.PAYOUT_TIMEZONE ?? "UTC").key, balance,
-        },
+      await moveWalletForOrder({
+        role, userId, orderId, delta: -amount,
+        description: `Commission refunded — order #${order.orderNumber}${r.note ? ` (${r.note})` : ""}`,
       });
+      // Set, not increment: an unset (null) clawback does not increment in MongoDB.
+      // This refund is claimed above, so no other one adds to it at the same time.
+      await prisma.order.update({ where: { id: orderId }, data: { [clawField]: Number(((order[clawField] ?? 0) + amount).toFixed(2)) } });
       await upsertRunningPayoutRequest(userId, role);
       applied++;
     }

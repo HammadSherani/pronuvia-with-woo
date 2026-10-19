@@ -6,6 +6,7 @@ import { sendMail } from "@/lib/email/mailer";
 import { orderRefundEmail } from "@/lib/email/templates";
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
+import { moveWallet } from "@/lib/withdrawals/wallet-move";
 import { getWooRefund, REFUND_ID_KEY, type WooOrderDetail } from "@/lib/woo/orders";
 import { reviewManaged } from "./commission-review";
 
@@ -93,19 +94,6 @@ function plan(items: OrderItem[], remaining: Map<number, number>, lines: RefundL
   const eventTotal = round2(stored.reduce((s, x) => s + x.lineTotal, 0));
   if (eventTotal <= 0) return "Refund amount is zero.";
   return { lines: chosen, isFull, stored, eventTotal };
-}
-
-/** Changes a wallet by `delta` in one atomic step; returns the new balance. */
-async function moveWallet(role: "SALES_REP" | "PHYSICIAN", id: string, delta: number): Promise<number> {
-  const model = role === "SALES_REP" ? prisma.salesRepresentative : prisma.partneringPhysician;
-  // Prisma delegates differ in type but share these calls
-  const m = model as unknown as typeof prisma.salesRepresentative;
-  const { walletBalance } = await m.update({ where: { id }, data: { walletBalance: { increment: delta } }, select: { walletBalance: true } });
-  // Floating point leaves e.g. 5090.469999999999: store it rounded, unless
-  // another change landed in between (then that one's value stands)
-  const rounded = round2(walletBalance);
-  if (rounded !== walletBalance) await m.updateMany({ where: { id, walletBalance }, data: { walletBalance: rounded } });
-  return rounded;
 }
 
 /**

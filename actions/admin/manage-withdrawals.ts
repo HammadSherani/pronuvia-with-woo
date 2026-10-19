@@ -4,6 +4,8 @@ import { revalidatePath }                          from "next/cache";
 import { prisma }                                  from "@/lib/db/prisma";
 import { requireAdmin }                            from "@/lib/auth/dal";
 import { sendPayoutApprovalEmail, type ApprovedPayoutRequest } from "@/lib/withdrawals/notifications";
+import { markCommissionPaidOutInWoo }            from "@/lib/orders/commission-paid";
+import { lockPaidOutCommission }                 from "@/lib/withdrawals/paid-out";
 
 export type WithdrawalActionState = {
   success?: boolean;
@@ -15,8 +17,8 @@ async function applyWithdrawDecision(
   action: "APPROVED" | "REJECTED",
   adminNote: string | undefined,
   description: string,
-): Promise<ApprovedPayoutRequest | null> {
-  return prisma.$transaction(async (tx) => {
+): Promise<(ApprovedPayoutRequest & { paidOutOrderIds: string[] }) | null> {
+  const result = await prisma.$transaction(async (tx) => {
     const request = await tx.withdrawRequest.findUnique({
       where: { id: requestId },
       select: {
@@ -87,7 +89,11 @@ async function applyWithdrawDecision(
       }
     }
 
+    // The commission in this payout is paid out: its WP review is fixed now
+    const paidOutOrderIds = action === "APPROVED" ? await lockPaidOutCommission(tx, request) : [];
+
     return {
+      paidOutOrderIds,
       id: request.id,
       amount: request.amount,
       userId: request.userId,
@@ -98,6 +104,9 @@ async function applyWithdrawDecision(
       periodKey: request.periodKey,
     };
   });
+  // Tell the WP Commissions box (best effort: Pronuvia ignores changes to paid-out commission anyway)
+  if (result?.paidOutOrderIds.length) await markCommissionPaidOutInWoo(result.paidOutOrderIds);
+  return result;
 }
 
 export async function updateWithdrawRequest(

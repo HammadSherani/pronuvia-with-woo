@@ -29,6 +29,9 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 - [ ] Purana "product update" webhook (khaali delivery URL) hata dein
 - [ ] **Pronuvia Order Number plugin** (WP par order number Pronuvia wala, e.g. 13045, Woo ID 570 ki jagah; Orders search mein bhi): Plugins → Add New → Upload `wordpress/pronuvia-order-number.zip` → Activate. Order ID (URL ka `id=570`) nahi badalta
 - [ ] **Pronuvia Commissions plugin** (order page par doctor / rep commission Approve / Reject / Modify): Plugins → Add New → Upload `wordpress/pronuvia-commissions.zip` → Activate. Faisla order webhook se Pronuvia mein aata hai; sirf approved commission payout mein jati hai
+  - **1.2.0**: commission Commission Payout mein payout approve hone tak WP par badli ja sakti hai (Approve / Reject / Modify jitni dafa, wallet farq ke saath). Payout approve → wo row lock, sirf Refund commission
+  - Is release ke deploy par **pehle** backfill chalayein (purane, pehle se pay hue orders lock ho jayein), **phir** plugin 1.2.0 upload:
+    `tsx --conditions=react-server --env-file=.env scripts/backfill-commission-paid-out.mts --dry` (list dekhein), phir bina `--dry`
 - [ ] **Pronuvia SSO plugin** (dashboard se WP admin bina password): Plugins → Add New → Upload `wordpress/pronuvia-sso.zip` → Activate; `wp-config.php` mein `define( 'PRONUVIA_SSO_SECRET', '<WOO_SSO_SECRET wali value>' );`. Pronuvia admin aur WP admin user ka email ek hi ho (warna `define( 'PRONUVIA_SSO_USER', '<WP username>' );`)
 - [ ] Optional (WP developer): hamara order number WP admin mein (Sequential Order Numbers / snippet), "Shipped" status, coupon par "Kis ke liye" field
 

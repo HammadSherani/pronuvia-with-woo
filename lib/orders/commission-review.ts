@@ -1,15 +1,27 @@
 import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { CommissionReview } from "@/generated/prisma/enums";
+import { addWooOrderNote, updateWooOrder } from "@/lib/woo/orders";
+import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
+import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
 
 // Commission review: each order's commission (doctor, sales rep) is approved,
 // rejected or modified by the admin on the WP order page (plugin
 // wordpress/pronuvia-commissions). The decision lives in the Woo order meta
 // `pronuvia_commission_review` and comes back here when the order is brought
 // up to date (webhook, cron, opening it). Only approved commission is paid.
+//
+// Stages of a role's commission:
+//   - awaiting review: nothing in the wallet yet;
+//   - in payout (order commissionPaid): in the wallet and the pending payout
+//     request; the admin can still approve / reject / modify on WP, and the
+//     wallet moves by the difference;
+//   - paid out (*CommissionPaidOutAt, set when the user's payout is approved
+//     in Commission Payout): fixed; only "Refund commission" takes part back.
 
-export const REVIEW_META_KEY = "pronuvia_commission_review";
-export const PAID_META_KEY   = "pronuvia_commission_paid";
+export const REVIEW_META_KEY   = "pronuvia_commission_review";
+export const PAID_META_KEY     = "pronuvia_commission_paid";       // "yes" once in payout
+export const PAID_OUT_META_KEY = "pronuvia_commission_paid_out";   // JSON list of paid-out roles
 export const NAME_META_KEYS  = { physician: "pronuvia_physician_name", sales_rep: "pronuvia_sales_rep_name" } as const;
 
 type Role = "physician" | "sales_rep";
@@ -28,8 +40,10 @@ export type ReviewEntry = {
 export type ReviewMeta = Partial<Record<Role, ReviewEntry>>;
 
 const FIELDS = {
-  physician: { review: "physicianCommissionReview", amount: "physicianCommissionAmount", original: "physicianCommissionOriginal", note: "physician" },
-  sales_rep: { review: "salesRepCommissionReview",  amount: "salesRepCommissionAmount",  original: "salesRepCommissionOriginal",  note: "salesRep" },
+  physician: { review: "physicianCommissionReview", amount: "physicianCommissionAmount", original: "physicianCommissionOriginal", note: "physician",
+               user: "physicianId", clawback: "physicianClawback", paidOut: "physicianCommissionPaidOutAt", role: "PHYSICIAN", label: "Doctor" },
+  sales_rep: { review: "salesRepCommissionReview",  amount: "salesRepCommissionAmount",  original: "salesRepCommissionOriginal",  note: "salesRep",
+               user: "salesRepId", clawback: "salesRepClawback", paidOut: "salesRepCommissionPaidOutAt", role: "SALES_REP", label: "Sales rep" },
 } as const;
 
 const toWoo = (r: CommissionReview | null | undefined): WooStatus =>
@@ -37,6 +51,11 @@ const toWoo = (r: CommissionReview | null | undefined): WooStatus =>
 
 /** Is this role's commission payable: approved (null = approved, older orders). */
 export const isApproved = (r: CommissionReview | null | undefined) => r !== CommissionReview.AWAITING && r !== CommissionReview.REJECTED;
+
+/** What a role's commission puts in the wallet: approved → commission less clawback, else nothing. */
+export function commissionNet(review: CommissionReview | null | undefined, amount: number, clawback: number | null | undefined): number {
+  return isApproved(review) ? Number(Math.max(0, amount - (clawback ?? 0)).toFixed(2)) : 0;
+}
 
 /**
  * Paid into the wallet through the WP review: from then on its commission is
@@ -97,29 +116,35 @@ function parse(raw: unknown): ReviewMeta | null {
   return out;
 }
 
-/**
- * Applies the review found on the Woo order. A commission already paid out
- * is never changed; "pending" never undoes a decision.
- */
 export function parseReviewMeta(raw: unknown): ReviewMeta | null {
   return parse(raw);
 }
 
+/**
+ * Applies the review found on the Woo order, role by role:
+ *   - awaiting review / in payout: the decision is taken; in payout the
+ *     wallet and pending payout request move by the difference (may go
+ *     below zero);
+ *   - paid out: the change is not taken, and the Woo meta is put back to
+ *     what was paid so the WP box shows it.
+ * "pending" never undoes a decision.
+ */
 export async function applyCommissionReview(orderId: string, raw: unknown): Promise<boolean> {
   const meta = parse(raw);
   if (!meta) return false;
   const order = await prisma.order.findUniqueOrThrow({
     where:  { id: orderId },
     select: {
-      commissionPaid: true, subtotal: true, total: true, commissionReviewNotes: true,
-      physicianCommissionReview: true, physicianCommissionAmount: true, physicianCommissionOriginal: true,
-      salesRepCommissionReview: true, salesRepCommissionAmount: true, salesRepCommissionOriginal: true,
+      orderNumber: true, wooOrderId: true, commissionPaid: true, subtotal: true, total: true, commissionReviewNotes: true,
+      physicianId: true, physicianCommissionReview: true, physicianCommissionAmount: true, physicianCommissionOriginal: true,
+      physicianClawback: true, physicianCommissionPaidOutAt: true,
+      salesRepId: true, salesRepCommissionReview: true, salesRepCommissionAmount: true, salesRepCommissionOriginal: true,
+      salesRepClawback: true, salesRepCommissionPaidOutAt: true,
     },
   });
-  if (order.commissionPaid) return false;
 
-  const data: Record<string, unknown> = {};
-  const notes = { ...((order.commissionReviewNotes as Record<string, unknown> | null) ?? {}) };
+  let changed = false;
+  const notPaidAgain: Role[] = [];
   for (const role of ["physician", "sales_rep"] as const) {
     const e = meta[role];
     if (!e || e.status === "pending") continue;
@@ -134,15 +159,66 @@ export async function applyCommissionReview(orderId: string, raw: unknown): Prom
     // for it is no decision and must not make it look freshly approved
     if ((review ?? CommissionReview.APPROVED) === next && amount === current) continue;
 
-    data[f.review] = next;
-    if (amount !== current) {
-      data[f.original] = original;
-      data[f.amount]   = amount;
-    }
+    if (order[f.paidOut]) { notPaidAgain.push(role); continue; }
+
+    const notes = { ...((order.commissionReviewNotes as Record<string, unknown> | null) ?? {}) };
     notes[f.note] = { status: e.status, amount, original, note: e.note ?? null, at: e.at ?? new Date().toISOString(), by: e.by ?? null };
+    // Only from the state read above: a second refresh at the same time
+    // (webhook + page view) changes nothing, so the wallet moves once
+    const claimed = await prisma.order.updateMany({
+      where: {
+        id: orderId,
+        [f.amount]: current,
+        AND: [
+          review == null ? { OR: [{ [f.review]: null }, { [f.review]: { isSet: false } }] } : { [f.review]: review },
+          { OR: [{ [f.paidOut]: null }, { [f.paidOut]: { isSet: false } }] },
+        ],
+      },
+      data: {
+        [f.review]: next,
+        ...(amount !== current && { [f.original]: original, [f.amount]: amount }),
+        commissionReviewNotes: notes as object,
+      },
+    });
+    if (claimed.count !== 1) continue;
+    order.commissionReviewNotes = notes as typeof order.commissionReviewNotes;
+    changed = true;
+
+    // In payout: the wallet follows the new decision
+    const userId = order[f.user];
+    if (!order.commissionPaid || !userId) continue;
+    const clawback = order[f.clawback] as number | null;
+    const delta = Number((commissionNet(next, amount, clawback) - commissionNet(review, current, clawback)).toFixed(2));
+    if (delta === 0) continue;
+    const what = e.status === "rejected" ? "rejected" : amount !== current ? `changed to $${amount.toFixed(2)}` : "approved";
+    await moveWalletForOrder({
+      role: f.role, userId, orderId, delta,
+      description: `Commission adjusted — order #${order.orderNumber} (${what}${e.note ? `: ${e.note}` : ""})`,
+    });
+    await upsertRunningPayoutRequest(userId, f.role);
   }
-  if (!Object.keys(data).length) return false;
-  data.commissionReviewNotes = notes;
-  await prisma.order.update({ where: { id: orderId }, data });
-  return true;
+
+  if (notPaidAgain.length && order.wooOrderId) await restorePaidOutReview(order, raw, notPaidAgain);
+  return changed;
+}
+
+/** Puts the Woo review of paid-out roles back to what was paid, with an order note. */
+async function restorePaidOutReview(
+  order: { wooOrderId: number | null } & Record<string, unknown>,
+  raw: unknown,
+  roles: Role[],
+): Promise<void> {
+  try {
+    let obj: Record<string, Record<string, unknown>> = {};
+    try { obj = (typeof raw === "string" ? JSON.parse(raw) : raw) as typeof obj ?? {}; } catch { /* rebuilt below */ }
+    for (const role of roles) {
+      const f = FIELDS[role];
+      obj[role] = { ...(obj[role] ?? {}), status: toWoo(order[f.review] as CommissionReview | null), amount: order[f.amount] as number };
+    }
+    await updateWooOrder(order.wooOrderId!, { meta_data: [{ key: REVIEW_META_KEY, value: JSON.stringify(obj) }] });
+    await addWooOrderNote(order.wooOrderId!,
+      `${roles.map((r) => FIELDS[r].label).join(" and ")} commission is already paid out, so the change was not applied. Use Refund commission to take part of it back.`, false);
+  } catch (e) {
+    console.error(`[commission-review] could not restore the review of Woo order #${order.wooOrderId}:`, e);
+  }
 }
