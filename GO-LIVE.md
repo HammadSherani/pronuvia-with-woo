@@ -6,11 +6,12 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 
 ## 0. Live se pehle zaroori code kaam
 
-- [ ] **Refunds har jagah ek jaise** (Phase 9 ke baad tay hua, abhi baqi):
-  - WP admin se card order ka refund → Stripe refund khud ho (Woo refund id = Stripe idempotency key)
-  - Hifazatein: webhook band ho to cron khud ON kare + alert; `refreshRecentWooOrders` 7 din; Stripe refund fail → "pending", har cron par retry + alert, order page par dikhe
-  - Stripe webhook `charge.refunded`: Stripe dashboard ke refunds bhi Pronuvia + Woo mein
-  - Tab tak qaida: **card refund sirf Pronuvia admin se** (Process Refund → Via Stripe)
+- [x] **Saare order kaam WP admin se** (commission-work): Pronuvia admin mein order sirf dekhne ke liye (details, tracking, notes, commission, print). Status, refund, notes, emails, commission approve / reject / refund → WooCommerce order page
+  - WP admin se card order ka refund → Pronuvia khud Stripe refund karta hai (ek hi dafa: idempotency key + Stripe refund ke metadata se)
+  - Hifazatein: webhook band ho to cron khud ON kare + alert; `refreshRecentWooOrders` 7 din; Stripe refund fail → "Stripe refund pending" order page par, roz cron retry, pehli dafa alert
+  - [ ] Abhi baqi: Stripe **dashboard** se kiye refunds (Stripe webhook `charge.refunded`) Pronuvia + Woo mein nahi aate: card refund **sirf WP admin se** karein
+  - Woo mein refund karte waqt "Refund manually" use karein (Woo ka Stripe plugin nahi hai; paisa Pronuvia bhejta hai)
+- [ ] `OrderRefund.stripeRefundError` naya field: koi index nahi chahiye
 - [ ] Har phase ki "Aap ka apna test" wali line `PHASES.md` mein tick
 
 ## 1. WordPress / WooCommerce (live site)
@@ -80,7 +81,7 @@ Hata sakte hain (code ab nahi padhta): `FEDEX_*`, `UPS_*`, `USPS_*`, `SHIP_FROM_
 ## 6. Monitoring (pehle 48 ghante, phir roz)
 
 - [ ] `GET /api/woo/reconcile?days=2` (admin): total / status / refunded farq, Woo tak na pahunche orders, webhooks ka haal. Khaali `issues` = sab theek
-- [ ] `sales1.pronuvia@gmail.com` par alerts: "could not be sent to WooCommerce", "total differs", "coupon not applied", "refunded in WP admin"
+- [ ] `sales1.pronuvia@gmail.com` par alerts: "could not be sent to WooCommerce", "total differs", "coupon not applied", "Stripe refund failed, will retry", "no card payment to refund", "WooCommerce order webhook was off"
 - [ ] Admin → Email Logs: FAILED emails
 - [ ] Woo → Settings → Advanced → Webhooks: status **Active** (Woo lagataar failures par band kar deta hai)
 - [ ] Stripe dashboard: payments / refunds Pronuvia se milte hain

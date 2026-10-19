@@ -22,6 +22,8 @@ export type ReviewEntry = {
   note?:    string;
   at?:      string;
   by?:      string;
+  // Commission the admin took back after it was paid ("Refund commission")
+  refunds?: { id: string; amount: number; note?: string; at?: string; by?: string }[];
 };
 export type ReviewMeta = Partial<Record<Role, ReviewEntry>>;
 
@@ -35,6 +37,16 @@ const toWoo = (r: CommissionReview | null | undefined): WooStatus =>
 
 /** Is this role's commission payable: approved (null = approved, older orders). */
 export const isApproved = (r: CommissionReview | null | undefined) => r !== CommissionReview.AWAITING && r !== CommissionReview.REJECTED;
+
+/**
+ * Paid into the wallet through the WP review: from then on its commission is
+ * only taken back by the admin's "Refund commission" on the WP order page,
+ * never automatically by an order refund or cancellation.
+ */
+export const reviewManaged = (o: {
+  commissionPaid: boolean;
+  physicianCommissionReview?: CommissionReview | null; salesRepCommissionReview?: CommissionReview | null;
+}) => o.commissionPaid && (o.physicianCommissionReview != null || o.salesRepCommissionReview != null);
 
 /** Meta sent with the order to Woo: what the WP Commissions box starts from. */
 export function reviewMetaFor(order: {
@@ -70,6 +82,16 @@ function parse(raw: unknown): ReviewMeta | null {
       note: typeof e.note === "string" ? e.note.slice(0, 500) : undefined,
       at:   typeof e.at === "string" ? e.at : undefined,
       by:   typeof e.by === "string" ? e.by.slice(0, 120) : undefined,
+      refunds: Array.isArray(e.refunds)
+        ? (e.refunds as Record<string, unknown>[]).flatMap((r) => {
+            const amt = Number(r?.amount);
+            return typeof r?.id === "string" && r.id && Number.isFinite(amt) && amt > 0
+              ? [{ id: r.id.slice(0, 80), amount: Math.round(amt * 100) / 100,
+                   note: typeof r.note === "string" ? r.note.slice(0, 500) : undefined,
+                   at: typeof r.at === "string" ? r.at : undefined, by: typeof r.by === "string" ? r.by.slice(0, 120) : undefined }]
+              : [];
+          })
+        : undefined,
     };
   }
   return out;
@@ -79,6 +101,10 @@ function parse(raw: unknown): ReviewMeta | null {
  * Applies the review found on the Woo order. A commission already paid out
  * is never changed; "pending" never undoes a decision.
  */
+export function parseReviewMeta(raw: unknown): ReviewMeta | null {
+  return parse(raw);
+}
+
 export async function applyCommissionReview(orderId: string, raw: unknown): Promise<boolean> {
   const meta = parse(raw);
   if (!meta) return false;

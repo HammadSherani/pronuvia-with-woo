@@ -9,8 +9,9 @@ import {
 import { fromWooStatus, STATUS_META_KEY, toWooStatus } from "./woo-status";
 import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./woo-labels";
 import { importWooRefunds } from "./refunds";
-import { applyCommissionReview, REVIEW_META_KEY } from "./commission-review";
+import { applyCommissionReview, REVIEW_META_KEY, reviewManaged } from "./commission-review";
 import { creditReviewedOrder } from "@/lib/withdrawals/credit-order";
+import { applyCommissionRefunds } from "@/lib/withdrawals/commission-refund";
 import { wooFetch } from "@/lib/woo/client";
 
 // Orders live in WooCommerce; our Order record is the index the order lists,
@@ -122,13 +123,16 @@ export async function applyStatusLocally(orderId: string, status: OrderStatus): 
       salesRepCommissionAmount: true, physicianCommissionAmount: true,
       salesRepClawback: true, physicianClawback: true,
       commissionPaid: true, returnedAt: true, returnReason: true,
+      salesRepCommissionReview: true, physicianCommissionReview: true,
     },
   });
 
   // Commission is credited by the monthly sweep, which skips cancelled and
   // refunded orders. One already swept and now cancelled / refunded is
   // reversed here (a no-op otherwise), same math as the Refund flow.
-  const reversal = (status === OrderStatus.CANCELLED || status === OrderStatus.REFUNDED)
+  // Commission paid through the WP review is only taken back by the admin
+  // ("Refund commission" on the WP order page), never here.
+  const reversal = (status === OrderStatus.CANCELLED || status === OrderStatus.REFUNDED) && !reviewManaged(order)
     ? await reverseOrderCommissionIfPaid(order, status)
     : { reversed: false, newSalesRepClawback: order.salesRepClawback, newPhysicianClawback: order.physicianClawback };
 
@@ -217,6 +221,8 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
   await applyCommissionReview(order.id, metaValue(w, REVIEW_META_KEY));
   // Fully reviewed → into the wallets and Commission Payout (once)
   await creditReviewedOrder(order.id);
+  // Commission the admin took back afterwards ("Refund commission" on WP)
+  await applyCommissionRefunds(order.id, metaValue(w, REVIEW_META_KEY));
 
   // Labels bought in WP admin (WooCommerce Shipping)
   await applyWooLabels(order.id, parseWooLabels(metaValue(w, LABELS_META_KEY)), async (label) => {

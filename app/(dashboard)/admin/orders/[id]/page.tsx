@@ -4,15 +4,11 @@ import { Country } from "country-state-city";
 import { requireAdmin } from "@/lib/auth/dal";
 import { getOrderById, getOrderRefunds } from "@/actions/admin/manage-orders";
 import { OrderStatus } from "@/generated/prisma/enums";
-import { RefundOrderModal } from "@/components/admin/refund-order-modal";
 import { PrintButton } from "@/components/sales/print-button";
-import { SendOrderEmailPanel } from "@/components/admin/send-order-email-panel";
-import { OrderActionsPanel } from "@/components/admin/order-actions-panel";
 import { getOrderShipments } from "@/actions/admin/shipping";
 import type { OrderItem, StoredRefundItem } from "@/actions/admin/manage-orders";
 import { getOrderNotes } from "@/actions/admin/order-notes";
-import { OrderNotesPanel } from "@/components/admin/order-notes-panel";
-import { EditOrderAddress, EditOrderEmail, EditOrderPhone } from "@/components/admin/edit-order-address";
+import { OrderNotesList } from "@/components/admin/order-notes-list";
 import { APP_TIMEZONE } from "@/lib/utils/timezone";
 import { wpAdmin } from "@/lib/woo/admin-links";
 import { isFedEx2Day } from "@/lib/orders/shipping-method";
@@ -192,10 +188,8 @@ export default async function AdminOrderDetailPage({ params }: Props) {
     }
   }
 
-  const alreadyRefunded = items.map((_, idx) => refundQtyByIdx.get(idx) ?? 0);
   const reviewNote = (role: "physician" | "salesRep") =>
     (order.commissionReviewNotes as Record<string, { note?: string | null }> | null)?.[role]?.note || null;
-  const allItemsFullyRefunded = items.length > 0 && items.every((item, idx) => (refundQtyByIdx.get(idx) ?? 0) >= item.quantity);
   const isReturned = !!order.returnedAt;
   const customerPhone: string | null = order.customerPhone ?? null;
   const payStatus = order.paymentStatus ?? "PENDING";
@@ -316,28 +310,17 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                 </div>
 
                 <div className="no-print flex items-center gap-2 shrink-0">
-                  {!isReturned ? (
-                    <Link
-                      href={`/admin/orders/${order.id}/shipment`}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-[#3DBFA4] hover:bg-[#35a993] rounded-lg shadow-sm transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 001 1v10l2-1m7 1V7.5M16 7.5L13 6" />
-                      </svg>
-                      View / Add Shipment
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/admin/orders/${order.id}/shipment?mode=return`}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-sm transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
-                      </svg>
-                      Create Return Label
-                    </Link>
-                  )}
+                  {/* Labels and returns are made in WooCommerce; the shipment page shows them */}
+                  <Link
+                    href={`/admin/orders/${order.id}/shipment`}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-[#3DBFA4] hover:bg-[#35a993] rounded-lg shadow-sm transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 001 1v10l2-1m7 1V7.5M16 7.5L13 6" />
+                    </svg>
+                    View Shipment
+                  </Link>
                 </div>
               </div>
             </div>
@@ -414,7 +397,6 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                       <div>
                         <p className="text-[11px] text-gray-400 mb-0.5">
                           Patient Email:
-                          <EditOrderEmail orderId={order.id} current={order.customerEmail} />
                         </p>
                         <a href={`mailto:${order.customerEmail}`} className="text-xs text-[#3DBFA4] hover:underline break-all">
                           {order.customerEmail}
@@ -425,7 +407,6 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                       <div>
                         <p className="text-[11px] text-gray-400 mb-0.5">
                           Patient Phone:
-                          <EditOrderPhone orderId={order.id} current={customerPhone} />
                         </p>
                         {customerPhone && (
                           <a href={`tel:${customerPhone}`} className="text-xs text-[#3DBFA4] hover:underline">
@@ -463,7 +444,6 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                           )}
                         </div>
                       )}
-                      <EditOrderAddress orderId={order.id} type="billing" raw={order.billingAddress} />
                     </div>
                   ) : order.physician ? (
                     <div className="text-sm space-y-1">
@@ -482,12 +462,10 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                           {order.physician.phone}
                         </a>
                       )}
-                      <EditOrderAddress orderId={order.id} type="billing" raw={null} />
                     </div>
                   ) : (
                     <div>
                       <p className="text-sm text-gray-400">No billing info</p>
-                      <EditOrderAddress orderId={order.id} type="billing" raw={null} />
                     </div>
                   )}
                 </div>
@@ -507,7 +485,6 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                         <div>
                           <p className="text-[11px] text-gray-400 mb-0.5">
                             Patient Email:
-                            <EditOrderEmail orderId={order.id} current={order.customerEmail} />
                           </p>
                           <a href={`mailto:${order.customerEmail}`} className="text-xs text-[#3DBFA4] hover:underline break-all">
                             {order.customerEmail}
@@ -529,7 +506,6 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                           )}
                         </div>
                       )}
-                      <EditOrderAddress orderId={order.id} type="shipping" raw={order.shippingAddress} />
                     </div>
                   ) : order.physician ? (
                     <div className="text-sm space-y-1">
@@ -544,12 +520,10 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                           {order.physician.phone}
                         </a>
                       )}
-                      <EditOrderAddress orderId={order.id} type="shipping" raw={null} />
                     </div>
                   ) : (
                     <div>
                       <p className="text-sm text-gray-400">No shipping info</p>
-                      <EditOrderAddress orderId={order.id} type="shipping" raw={null} />
                     </div>
                   )}
                 </div>
@@ -778,27 +752,36 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                           </div>
                         )}
 
-                        {refund.customerRefundMethod && (refund.customerRefundAmount as number) > 0 && (
-                          <div className={`mt-2 flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg w-fit ${refund.customerRefundMethod === "stripe"
-                              ? "bg-indigo-50 text-indigo-700"
-                              : "bg-emerald-50 text-emerald-700"
-                            }`}>
-                            {refund.customerRefundMethod === "stripe" ? (
-                              <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                            )}
-                            Customer refund {fmtMoney(refund.customerRefundAmount as number)} via{" "}
-                            {refund.customerRefundMethod === "stripe" ? "Stripe (original card)" : "manual"}
-                            {refund.stripeRefundId && (
-                              <span className="font-mono text-[10px] opacity-60 ml-1">· {refund.stripeRefundId as string}</span>
-                            )}
-                          </div>
-                        )}
+                        {refund.customerRefundMethod && (refund.customerRefundAmount as number) > 0 && (() => {
+                          const method  = refund.customerRefundMethod as string;
+                          const pending = method === "stripe" && !refund.stripeRefundId;
+                          return (
+                            <div className={`mt-2 flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg w-fit ${pending
+                                ? "bg-amber-50 text-amber-700"
+                                : method === "stripe" ? "bg-indigo-50 text-indigo-700" : "bg-emerald-50 text-emerald-700"
+                              }`}>
+                              {method === "stripe" ? (
+                                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              )}
+                              {pending ? (
+                                <>Stripe refund pending {fmtMoney(refund.customerRefundAmount as number)}{refund.stripeRefundError ? ` — ${refund.stripeRefundError as string}` : ""} (tried again daily)</>
+                              ) : method === "stripe" ? (
+                                <>Refunded to card ✓ {fmtMoney(refund.customerRefundAmount as number)}</>
+                              ) : (
+                                <>Customer refund {fmtMoney(refund.customerRefundAmount as number)} via {method === "wallet" ? "wallet" : "manual"}</>
+                              )}
+                              {refund.stripeRefundId && (
+                                <span className="font-mono text-[10px] opacity-60 ml-1">· {refund.stripeRefundId as string}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -810,8 +793,18 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           {/* ════════ RIGHT SIDEBAR ════════ */}
           <div className="no-print space-y-4 lg:sticky lg:top-6">
 
-            {/* Send Order Email */}
-            <SendOrderEmailPanel orderId={id} />
+            {/* Changes are made on the WooCommerce order */}
+            {order.wooOrderId && (
+              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+                <p className="text-xs text-gray-500 leading-relaxed mb-3">
+                  Status, refunds, emails, notes and commission approval are handled on the WooCommerce order.
+                </p>
+                <a href={wpAdmin.editOrder(order.wooOrderId)} target="_blank" rel="noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 text-sm font-bold text-white bg-[#3DBFA4] hover:bg-[#35a993] rounded-lg transition-colors">
+                  Open in WooCommerce ↗
+                </a>
+              </div>
+            )}
 
             {/* Shipment Tracking */}
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -872,41 +865,8 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               </div>
             </div>
 
-            {/* Order Actions */}
-            <OrderActionsPanel
-              orderId={id}
-              current={order.status}
-              isReturned={isReturned}
-            />
-
-            {/* Refund action — hidden only when all items are fully refunded */}
-            {!allItemsFullyRefunded && (
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Refund Order</p>
-                <RefundOrderModal
-                  orderId={order.id}
-                  orderNumber={order.orderNumber}
-                  total={order.total}
-                  shippingRate={order.shippingRate ?? 0}
-                  items={items}
-                  alreadyRefunded={alreadyRefunded}
-                  existingSalesRepClawback={order.salesRepClawback ?? 0}
-                  existingPhysicianClawback={order.physicianClawback ?? 0}
-                  salesRepName={order.salesRep?.name ?? null}
-                  physicianName={order.physician ? `${order.physician.firstName} ${order.physician.lastName}` : null}
-                  salesRepCommissionAmount={order.salesRepCommissionAmount}
-                  physicianCommissionAmount={order.physicianCommissionAmount}
-                  commissionPaid={order.commissionPaid}
-                  salesRepWalletBalance={order.salesRep?.walletBalance ?? null}
-                  physicianWalletBalance={order.physician?.walletBalance ?? null}
-                  stripePaymentIntentId={order.stripePaymentIntentId ?? null}
-                  paymentMethod={order.paymentMethod ?? null}
-                />
-              </div>
-            )}
-
-            {/* Order Notes */}
-            <OrderNotesPanel orderId={id} initialNotes={notes} />
+            {/* Order Notes (managed in WooCommerce) */}
+            <OrderNotesList notes={notes} wooHref={order.wooOrderId ? wpAdmin.editOrder(order.wooOrderId) : null} />
           </div>
         </div>
       </div>

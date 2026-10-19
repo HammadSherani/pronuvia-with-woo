@@ -6,21 +6,17 @@ import { sendMail } from "@/lib/email/mailer";
 import { orderRefundEmail } from "@/lib/email/templates";
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
-import {
-  createWooRefund, getWooOrder, getWooRefund, REFUND_ID_KEY, updateWooOrder, type WooOrderDetail,
-} from "@/lib/woo/orders";
-import { STATUS_META_KEY } from "./woo-status";
+import { getWooRefund, REFUND_ID_KEY, type WooOrderDetail } from "@/lib/woo/orders";
+import { reviewManaged } from "./commission-review";
 
-// Refunds and returns. A refund is recorded here (OrderRefund, the order's
-// returned total and clawbacks, its status) and in WooCommerce (a refund on
-// the Woo order, which puts the items back in stock).
-//
-// - Made in our admin: the money goes back first (Stripe, the payer's wallet,
-//   or by hand), then the Woo refund is created and tagged with our id.
-// - Made in WP admin: picked up when the order is brought up to date
-//   (webhook, cron, opening it) and recorded the same way. A wallet order is
-//   credited back to the wallet; a card order is not refunded in Stripe from
-//   there, so the team is alerted.
+// Refunds are made in WP admin only. Each Woo refund is picked up when the
+// order is brought up to date (webhook, cron, opening it) and recorded here
+// (OrderRefund, the order's returned total and clawbacks, its status). The
+// money goes back the way it was paid: a wallet order to the wallet, a card
+// order in Stripe (WooCommerce cannot reach the Stripe payment, which was
+// taken here). A Stripe refund that fails is kept with its error and tried
+// again by the cron; the team is alerted. Refunds tagged with our id
+// (REFUND_ID_KEY) were made from the Pronuvia admin before and are skipped.
 //
 // Commission: until the monthly sweep the clawback only lowers what the sweep
 // credits (it credits commission − clawback); after it, the clawback is taken
@@ -28,7 +24,7 @@ import { STATUS_META_KEY } from "./woo-status";
 
 export type RefundLine  = { index: number; returnedQty: number };
 export type StoredRefundItem = { index: number; returnedQty: number; lineTotal: number };
-export type RefundMoney = { method: "manual" | "stripe" | "wallet"; amount: number };
+type RefundMethod = "manual" | "stripe" | "wallet";
 
 type OrderItem = { productId: string; variationId?: number | null; title: string; variantSize: string; unitPrice: number; quantity: number; lineTotal: number };
 
@@ -40,6 +36,7 @@ const ORDER_SELECT = {
   salesRepId: true, physicianId: true,
   salesRepCommissionAmount: true, physicianCommissionAmount: true,
   commissionPaid: true, wooOrderId: true,
+  salesRepCommissionReview: true, physicianCommissionReview: true,
   returnedAt: true, returnedTotal: true, returnReason: true,
   salesRepClawback: true, physicianClawback: true,
   stripePaymentIntentId: true,
@@ -119,17 +116,19 @@ async function moveWallet(role: "SALES_REP" | "PHYSICIAN", id: string, delta: nu
 async function record(order: RefundOrder, p: Plan, opts: {
   refundNumber: number;
   amount:       number;               // money back to the customer
-  method:       RefundMoney["method"] | null;
+  method:       RefundMethod | null;
   reason:       string;
-  stripeRefundId?: string | null;
   wooRefundId?:    number | null;
   source:       "pronuvia" | "woocommerce";
 }): Promise<{ id: string; salesRepClawback: number; physicianClawback: number } | null> {
   const repLeft = Math.max(0, order.salesRepCommissionAmount  - (order.salesRepClawback  ?? 0));
   const drLeft  = Math.max(0, order.physicianCommissionAmount - (order.physicianClawback ?? 0));
   const share   = Math.min(1, p.eventTotal / (order.subtotal > 0 ? order.subtotal : order.total));
-  const salesRepClawback  = p.isFull ? repLeft : round2(Math.min(repLeft, order.salesRepCommissionAmount  * share));
-  const physicianClawback = p.isFull ? drLeft  : round2(Math.min(drLeft,  order.physicianCommissionAmount * share));
+  // Commission paid through the WP review is taken back only by the admin's
+  // "Refund commission" on the WP order page, not by the order refund
+  const managed = reviewManaged(order);
+  const salesRepClawback  = managed ? 0 : p.isFull ? repLeft : round2(Math.min(repLeft, order.salesRepCommissionAmount  * share));
+  const physicianClawback = managed ? 0 : p.isFull ? drLeft  : round2(Math.min(drLeft,  order.physicianCommissionAmount * share));
 
   let refund;
   try {
@@ -144,7 +143,6 @@ async function record(order: RefundOrder, p: Plan, opts: {
         reason:               opts.reason.trim() || null,
         customerRefundMethod: opts.amount > 0 ? opts.method : null,
         customerRefundAmount: opts.amount > 0 ? opts.amount : null,
-        stripeRefundId:       opts.stripeRefundId ?? null,
         wooRefundId:          opts.wooRefundId ?? null,
         source:               opts.source,
       },
@@ -197,7 +195,7 @@ async function record(order: RefundOrder, p: Plan, opts: {
   await prisma.order.update({
     where: { id: order.id },
     data: {
-      ...(p.isFull && { status: OrderStatus.REFUNDED, commissionPaid: false }),
+      ...(p.isFull && { status: OrderStatus.REFUNDED, ...(!managed && { commissionPaid: false }) }),
       returnedAt:        order.returnedAt ?? new Date(),
       returnReason:      opts.reason.trim() || order.returnReason || null,
       returnedTotal:     round2((order.returnedTotal ?? 0) + opts.amount),
@@ -242,100 +240,6 @@ async function refundEmail(order: RefundOrder, p: Plan, amount: number, reason: 
   } catch (e) {
     console.error("[refunds] refund email failed:", e);
   }
-}
-
-// ── refunds made in our admin ──
-
-/** The Refund / Return action: money back, our record, then the Woo refund. */
-export async function refundOrder(
-  orderId: string,
-  lines:   RefundLine[] | null,          // null = everything still refundable
-  reason:  string,
-  money?:  RefundMoney,
-): Promise<{ success: boolean; message: string }> {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, select: ORDER_SELECT });
-  if (!order) return { success: false, message: "Order not found." };
-
-  const { items, remaining, count } = await remainingQuantities(order);
-  const p = plan(items, remaining, lines);
-  if (typeof p === "string") return { success: false, message: p };
-
-  const amount = money && money.amount > 0 ? round2(money.amount) : 0;
-  if (amount > round2(order.total - (order.returnedTotal ?? 0)) + 0.005) {
-    return { success: false, message: `The refund can't be more than what is left to refund ($${round2(order.total - (order.returnedTotal ?? 0)).toFixed(2)}).` };
-  }
-
-  // The money first; nothing is recorded if it fails
-  let stripeRefundId: string | null = null;
-  if (amount > 0 && money?.method === "stripe") {
-    if (!order.stripePaymentIntentId) return { success: false, message: "No Stripe payment on this order — cannot process Stripe refund." };
-    const { stripe } = await import("@/lib/stripe/server");
-    if (!stripe) return { success: false, message: "Stripe is not configured on this server." };
-    try {
-      stripeRefundId = (await stripe.refunds.create({ payment_intent: order.stripePaymentIntentId, amount: Math.round(amount * 100) })).id;
-    } catch (e) {
-      return { success: false, message: `Stripe error: ${e instanceof Error ? e.message : "Stripe refund failed."}` };
-    }
-  }
-  if (amount > 0 && money?.method === "wallet" && order.paymentMethod !== "WALLET") {
-    return { success: false, message: "Only wallet orders can be refunded to the wallet." };
-  }
-
-  const refundNumber = count + 1;
-  const done = await record(order, p, {
-    refundNumber, amount: amount || p.eventTotal, method: amount > 0 ? money!.method : null, reason, stripeRefundId, source: "pronuvia",
-  });
-  if (!done) return { success: false, message: "This refund was already recorded." };
-
-  // WooCommerce: the refund record (restocks the items). The money has
-  // moved, so a Woo failure is reported, not undone.
-  let wooNote = "";
-  if (order.wooOrderId) {
-    try {
-      const w = await getWooOrder(order.wooOrderId);
-      const left = round2(Number(w.total) - w.refunds.reduce((s, r) => s + Math.abs(Number(r.total)), 0));
-      const wooLines = p.lines.flatMap((l) => {
-        const item = items[l.index];
-        const wl = w.line_items[l.index]?.variation_id === (item.variationId ?? 0) || w.line_items[l.index]?.product_id === Number(item.productId)
-          ? w.line_items[l.index]
-          : w.line_items.find((x) => (item.variationId ? x.variation_id === item.variationId : x.product_id === Number(item.productId)));
-        return wl ? [{ wooLineId: wl.id, quantity: l.returnedQty, total: round2(Number(wl.total) * l.returnedQty / wl.quantity) }] : [];
-      });
-      // The lines carry only the money actually returned: Woo adds a refund's
-      // amount up from its lines when it is 0, so items coming back without
-      // money must be $0 lines. Anything above the items is the shipping.
-      const itemsValue = wooLines.reduce((s, l) => s + l.total, 0);
-      const forItems   = Math.min(amount, itemsValue);
-      let given = 0;
-      wooLines.forEach((l, i) => {
-        l.total = i === wooLines.length - 1 ? round2(forItems - given) : round2(itemsValue ? l.total * forItems / itemsValue : 0);
-        given = round2(given + l.total);
-      });
-      // Only the money actually returned (0 when items come back without it)
-      const wooRefund = await createWooRefund(order.wooOrderId, {
-        amount: Math.min(amount, left), reason: reason.trim() || `Refund #${refundNumber}`, lines: wooLines, ourId: done.id,
-      });
-      await prisma.orderRefund.update({ where: { id: done.id }, data: { wooRefundId: wooRefund.id } });
-      // Woo marks the order Refunded itself once all its money is refunded.
-      // Short of that (e.g. shipping kept), setting the status would make Woo
-      // refund the rest on its own, so only our status goes along.
-      if (p.isFull) await updateWooOrder(order.wooOrderId, { meta_data: [{ key: STATUS_META_KEY, value: OrderStatus.REFUNDED }] });
-    } catch (e) {
-      console.error(`[refunds] order ${order.orderNumber}: Woo refund not created:`, e);
-      wooNote = ` WooCommerce refund was not recorded (${e instanceof Error ? e.message : String(e)}); add it in WP admin so stock is correct.`;
-    }
-  }
-
-  const how = stripeRefundId ? ` Stripe refund $${amount.toFixed(2)} sent.`
-    : money?.method === "wallet" && amount > 0 ? ` $${amount.toFixed(2)} credited to the wallet.`
-    : money?.method === "manual" && amount > 0 ? ` Manual refund $${amount.toFixed(2)} recorded.`
-    : "";
-  return {
-    success: true,
-    message: (order.commissionPaid
-      ? `Refund #${refundNumber} processed.${how} Rep clawback: $${done.salesRepClawback.toFixed(2)}, Doctor clawback: $${done.physicianClawback.toFixed(2)}.`
-      : `Refund #${refundNumber} processed.${how} Commission not yet paid — no clawback applied.`) + wooNote,
-  };
 }
 
 // ── refunds made in WP admin ──
@@ -388,16 +292,69 @@ export async function importWooRefunds(orderId: string, w: WooOrderDetail): Prom
     if (typeof p === "string") continue;
 
     const wallet = order.paymentMethod === "WALLET";
+    const card   = !wallet && !!order.stripePaymentIntentId;
     const done = await record(order, p, {
-      refundNumber: count + 1, amount, method: wallet ? "wallet" : "manual",
+      refundNumber: count + 1, amount, method: wallet ? "wallet" : card ? "stripe" : "manual",
       reason: refund.reason || "Refunded in WooCommerce", wooRefundId: refund.id, source: "woocommerce",
     });
-    if (done && !wallet && amount > 0) {
-      await sendMail({
-        to: ALERT_TO, type: "WooCommerce Refund Alert", relatedId: order.orderNumber,
-        subject: `Order ${order.orderNumber} refunded in WP admin: refund the card in Stripe`,
-        html: `<p>A $${amount.toFixed(2)} refund was made on order ${order.orderNumber} in WP admin. It is recorded in Pronuvia (commission adjusted), but the customer's card was not refunded: do it in the Stripe dashboard, or make refunds from the Pronuvia admin next time.</p>`,
-      }).catch((e) => console.error("[refunds] alert email failed:", e));
-    }
+    if (!done || amount <= 0 || wallet) continue;
+    if (card) await refundCard(done.id, { first: true });
+    else await alert(order.orderNumber, `Order ${order.orderNumber} refunded in WP admin: no card payment to refund`,
+      `A $${amount.toFixed(2)} refund was made on order ${order.orderNumber} in WP admin. The order has no Stripe payment, so no money was sent back automatically: return it to the customer by hand.`);
   }
+}
+
+function alert(orderNumber: string, subject: string, text: string) {
+  return sendMail({ to: ALERT_TO, type: "WooCommerce Refund Alert", relatedId: orderNumber, subject, html: `<p>${text}</p>` })
+    .catch((e) => console.error("[refunds] alert email failed:", e));
+}
+
+/**
+ * Sends a WP admin refund back to the card in Stripe, once: a Stripe refund
+ * already made for this record (found by its metadata) is taken instead of a
+ * new one, and the idempotency key covers repeats in a row. On failure the
+ * error is kept for the cron; the team is told the first time.
+ */
+async function refundCard(refundId: string, opts: { first: boolean }): Promise<boolean> {
+  const r = await prisma.orderRefund.findUniqueOrThrow({ where: { id: refundId } });
+  if (r.stripeRefundId) return true;
+  const order = await prisma.order.findUniqueOrThrow({ where: { id: r.orderId }, select: { orderNumber: true, stripePaymentIntentId: true } });
+  const amount = r.customerRefundAmount ?? 0;
+  if (!order.stripePaymentIntentId || amount <= 0) return false;
+
+  let error: string;
+  try {
+    const { stripe } = await import("@/lib/stripe/server");
+    if (!stripe) throw new Error("Stripe is not configured on this server.");
+    const made = (await stripe.refunds.list({ payment_intent: order.stripePaymentIntentId, limit: 100 })).data
+      .find((x) => x.metadata?.pronuvia_refund_id === r.id && x.status !== "failed" && x.status !== "canceled");
+    const stripeRefund = made ?? await stripe.refunds.create(
+      { payment_intent: order.stripePaymentIntentId, amount: Math.round(amount * 100),
+        metadata: { pronuvia_refund_id: r.id, order_number: order.orderNumber, woo_refund_id: String(r.wooRefundId ?? "") } },
+      { idempotencyKey: `woo-refund-${r.orderId}-${r.wooRefundId ?? r.id}` },
+    );
+    await prisma.orderRefund.update({ where: { id: r.id }, data: { stripeRefundId: stripeRefund.id, stripeRefundError: null } });
+    return true;
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  }
+  console.error(`[refunds] order ${order.orderNumber}: Stripe refund failed:`, error);
+  await prisma.orderRefund.update({ where: { id: r.id }, data: { stripeRefundError: error } });
+  if (opts.first) {
+    await alert(order.orderNumber, `Order ${order.orderNumber}: Stripe refund failed, will retry`,
+      `A $${amount.toFixed(2)} refund was made on order ${order.orderNumber} in WP admin, but Stripe did not take the card refund: ${error}. It is tried again once a day; if it keeps failing, refund the card in the Stripe dashboard.`);
+  }
+  return false;
+}
+
+/** Cron: card refunds from WP admin that Stripe did not take yet (last 30 days). */
+export async function retryStripeRefunds(): Promise<{ retried: number; refunded: number }> {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const rows = await prisma.orderRefund.findMany({
+    where:  { stripeRefundError: { not: null }, processedAt: { gte: since }, OR: [{ stripeRefundId: null }, { stripeRefundId: { isSet: false } }] },
+    select: { id: true },
+  });
+  let refunded = 0;
+  for (const r of rows) if (await refundCard(r.id, { first: false })) refunded++;
+  return { retried: rows.length, refunded };
 }

@@ -161,11 +161,6 @@ export async function updateWooOrders(updates: ({ id: number } & Record<string, 
   return done;
 }
 
-/** Moves the order to the WooCommerce trash (it can be restored in WP admin). */
-export async function trashWooOrder(id: number): Promise<void> {
-  await wooFetch(`wc/v3/orders/${id}`, { method: "DELETE" });
-}
-
 export async function getWooOrderNotes(orderId: number): Promise<WooOrderNote[]> {
   return (await wooFetch<WooOrderNote[]>(`wc/v3/orders/${orderId}/notes`)).data;
 }
@@ -175,10 +170,6 @@ export async function addWooOrderNote(orderId: number, note: string, customerNot
     method: "POST",
     body:   { note, customer_note: customerNote },
   })).data;
-}
-
-export async function deleteWooOrderNote(orderId: number, noteId: number): Promise<void> {
-  await wooFetch(`wc/v3/orders/${orderId}/notes/${noteId}?force=true`, { method: "DELETE" });
 }
 
 // ── Refunds (Phase 9) ──
@@ -195,28 +186,4 @@ export const REFUND_ID_KEY = "pronuvia_refund_id";
 
 export async function getWooRefund(orderId: number, refundId: number): Promise<WooRefund> {
   return (await wooFetch<WooRefund>(`wc/v3/orders/${orderId}/refunds/${refundId}`)).data;
-}
-
-/**
- * Records a refund on the Woo order. The money was already returned (Stripe,
- * wallet or by hand), so Woo moves none (`api_refund: false`); it puts the
- * refunded items back in stock.
- */
-export async function createWooRefund(orderId: number, refund: {
-  amount:  number;
-  reason:  string;
-  lines:   { wooLineId: number; quantity: number; total: number }[];
-  ourId:   string;
-}): Promise<WooRefund> {
-  return (await wooFetch<WooRefund>(`wc/v3/orders/${orderId}/refunds`, {
-    method: "POST",
-    body: {
-      amount:        refund.amount.toFixed(2),
-      reason:        refund.reason,
-      api_refund:    false,
-      restock_items: true,
-      line_items:    refund.lines.map((l) => ({ id: l.wooLineId, quantity: l.quantity, refund_total: l.total.toFixed(2) })),
-      meta_data:     [{ key: REFUND_ID_KEY, value: refund.ourId }],
-    },
-  })).data;
 }

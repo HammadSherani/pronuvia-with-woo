@@ -255,6 +255,9 @@ model OrderRefund {
   customerRefundMethod String?  // "manual" | "stripe" | "wallet"
   customerRefundAmount Float?
   stripeRefundId       String?
+  // Why the card refund for a WP admin refund did not go through yet (the
+  // cron tries again); null once Stripe took it
+  stripeRefundError    String?
   // The matching WooCommerce refund (Phase 9). Refunds made here create it;
   // refunds made in WP admin are imported with it (one record per Woo refund).
   wooRefundId          Int?
@@ -329,6 +332,21 @@ model Shipment {
 model Counter {
   id    String @id @map("_id")   // e.g. "orderNumber"
   value Int
+}
+
+// Commission taken back by the admin on the WP order page (Commissions box,
+// "Refund commission") after it was approved and paid into the wallet.
+// `key` is the refund's id from WP, so a repeated webhook applies it once.
+model CommissionRefund {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  orderId   String   @db.ObjectId
+  userId    String   @db.ObjectId
+  userRole  Role
+  amount    Float
+  note      String?
+  by        String?
+  createdAt DateTime @default(now())
 }
 
 model OrderNote {
