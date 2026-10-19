@@ -127,7 +127,9 @@ export function parseReviewMeta(raw: unknown): ReviewMeta | null {
  *     below zero);
  *   - paid out: the change is not taken, and the Woo meta is put back to
  *     what was paid so the WP box shows it.
- * "pending" never undoes a decision.
+ * Modify on WP changes only the amount, whatever the status: a pending or
+ * rejected commission keeps it for when it is approved. "pending" never
+ * undoes a decision.
  */
 export async function applyCommissionReview(orderId: string, raw: unknown): Promise<boolean> {
   const meta = parse(raw);
@@ -147,14 +149,17 @@ export async function applyCommissionReview(orderId: string, raw: unknown): Prom
   const notPaidAgain: Role[] = [];
   for (const role of ["physician", "sales_rep"] as const) {
     const e = meta[role];
-    if (!e || e.status === "pending") continue;
+    if (!e) continue;
     const f = FIELDS[role];
     const review   = order[f.review] as CommissionReview | null;
+    // "pending" never undoes a decision; while awaiting it can still carry a modified amount
+    if (e.status === "pending" && review !== CommissionReview.AWAITING) continue;
     const current  = order[f.amount] as number;
     const original = (order[f.original] as number | null) ?? current;
-    const next     = e.status === "approved" ? CommissionReview.APPROVED : CommissionReview.REJECTED;
-    // Approved with another amount = modified; never more than the order's items
-    const amount = e.status === "approved" ? Math.min(e.amount, order.subtotal > 0 ? order.subtotal : order.total) : current;
+    const next     = e.status === "approved" ? CommissionReview.APPROVED
+                   : e.status === "rejected" ? CommissionReview.REJECTED : CommissionReview.AWAITING;
+    // Modify changes only the amount (any status); never more than the order's items
+    const amount = Math.min(e.amount, order.subtotal > 0 ? order.subtotal : order.total);
     // No review yet (an older order) counts as approved: Woo's "approved"
     // for it is no decision and must not make it look freshly approved
     if ((review ?? CommissionReview.APPROVED) === next && amount === current) continue;

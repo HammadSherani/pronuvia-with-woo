@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.2.0
+ * Version:     1.3.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -11,6 +11,10 @@
  * original). This box shows them; an admin decision is saved back into that
  * meta with an order note, and the order save makes WooCommerce notify
  * Pronuvia (order.updated webhook), which pays only approved commission.
+ *
+ * What each status offers: pending → Approve, Reject, Modify; approved →
+ * Reject; rejected → Approve, Modify. Modify changes only the amount, the
+ * status stays as it is.
  *
  * Once every commission on the order is reviewed it goes into the wallets and
  * Commission Payout (`pronuvia_commission_paid` = yes, "in payout"). It can
@@ -75,6 +79,17 @@ function pronuvia_comm_locked( $order, $role ) {
 		return 'Order ' . $order->get_status();
 	}
 	return false;
+}
+
+/** The actions a commission in this status offers (Modify keeps the status). */
+function pronuvia_comm_allowed( $status ) {
+	if ( 'approved' === $status ) {
+		return array( 'reject' );
+	}
+	if ( 'rejected' === $status ) {
+		return array( 'approve', 'modify' );
+	}
+	return array( 'approve', 'reject', 'modify' );
 }
 
 // ── Meta box ──────────────────────────────────────────────────────────────
@@ -151,15 +166,22 @@ function pronuvia_comm_box( $post_or_order ) {
 						<br><small>Up to <?php echo wp_kses_post( wc_price( $left ) ); ?></small>
 					<?php elseif ( $locked ) : ?>
 						<em><?php echo esc_html( $locked ); ?></em>
-					<?php else : ?>
+					<?php else :
+						$allowed = pronuvia_comm_allowed( $status ); ?>
 						<p style="margin:0 0 6px">
-							<button type="button" class="button" data-decision="approve">Approve</button>
-							<button type="button" class="button" data-decision="reject">Reject</button>
+							<?php if ( in_array( 'approve', $allowed, true ) ) : ?>
+								<button type="button" class="button" data-decision="approve">Approve</button>
+							<?php endif; ?>
+							<?php if ( in_array( 'reject', $allowed, true ) ) : ?>
+								<button type="button" class="button" data-decision="reject">Reject</button>
+							<?php endif; ?>
 						</p>
-						<p style="margin:0 0 6px">
-							<input type="number" step="0.01" min="0" class="pc-amount" style="width:90px" value="<?php echo esc_attr( number_format( $amount, 2, '.', '' ) ); ?>">
-							<button type="button" class="button" data-decision="modify">Modify</button>
-						</p>
+						<?php if ( in_array( 'modify', $allowed, true ) ) : ?>
+							<p style="margin:0 0 6px">
+								<input type="number" step="0.01" min="0" class="pc-amount" style="width:90px" value="<?php echo esc_attr( number_format( $amount, 2, '.', '' ) ); ?>">
+								<button type="button" class="button" data-decision="modify">Modify</button>
+							</p>
+						<?php endif; ?>
 						<input type="text" class="pc-note" placeholder="Note (optional)" style="width:100%">
 					<?php endif; ?>
 				</td>
@@ -170,8 +192,8 @@ function pronuvia_comm_box( $post_or_order ) {
 	<?php if ( $any_open ) : ?>
 		<p class="description">
 			<?php echo $in_payout
-				? 'This commission is in Commission Payout in Pronuvia. It can still be approved, rejected or modified until the payout is approved there; the wallet follows each change.'
-				: 'An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed. It can be changed until the payout is approved there.'; ?>
+				? 'This commission is in Commission Payout in Pronuvia. It can still be changed until the payout is approved there; the wallet follows each change. Modify changes only the amount, not the status.'
+				: 'An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed. It can be changed until the payout is approved there. Modify changes only the amount, not the status.'; ?>
 		</p>
 	<?php endif; ?>
 	<?php if ( $any_out ) : ?>
@@ -191,8 +213,9 @@ function pronuvia_comm_box( $post_or_order ) {
 			body.append( 'order_id', table.dataset.order );
 			body.append( 'role', row.dataset.role );
 			body.append( 'decision', btn.dataset.decision );
-			body.append( 'amount', row.querySelector( '.pc-amount' ).value );
-			body.append( 'note', row.querySelector( '.pc-note' ).value );
+			var amount = row.querySelector( '.pc-amount' ), note = row.querySelector( '.pc-note' );
+			body.append( 'amount', amount ? amount.value : '' );
+			body.append( 'note', note ? note.value : '' );
 			row.querySelectorAll( 'button' ).forEach( function ( b ) { b.disabled = true; } );
 			fetch( ajaxurl, { method: 'POST', credentials: 'same-origin', body: body } )
 				.then( function ( r ) { return r.json(); } )
@@ -227,6 +250,11 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 	$original = isset( $e['original'] ) ? (float) $e['original'] : $current;
 	$label    = $roles[ $role ]['label'];
 	$note     = trim( (string) $note );
+	$status   = (string) ( $e['status'] ?? 'pending' );
+
+	if ( 'refund' !== $decision && ! in_array( $decision, pronuvia_comm_allowed( $status ), true ) ) {
+		return new WP_Error( 'decision', sprintf( 'This commission is %s: it can only be %s now.', $status, implode( ' or ', array_map( function ( $d ) { return $d . 'd'; }, pronuvia_comm_allowed( $status ) ) ) ) );
+	}
 
 	if ( 'approve' === $decision ) {
 		$e['status'] = 'approved';
@@ -238,10 +266,10 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 		if ( ! is_numeric( $amount_raw ) || (float) $amount_raw < 0 || (float) $amount_raw > 1000000 ) {
 			return new WP_Error( 'amount', 'Enter a commission amount of 0 or more.' );
 		}
+		// Only the amount: the status stays as it is
 		$new         = round( (float) $amount_raw, 2 );
-		$e['status'] = 'approved';
 		$e['amount'] = $new;
-		$text        = sprintf( '%s commission modified: %s → %s.', $label, wp_strip_all_tags( wc_price( $current ) ), wp_strip_all_tags( wc_price( $new ) ) );
+		$text        = sprintf( '%s commission modified: %s → %s (still %s).', $label, wp_strip_all_tags( wc_price( $current ) ), wp_strip_all_tags( wc_price( $new ) ), $status );
 	} elseif ( 'refund' === $decision ) {
 		$left = round( $current - pronuvia_comm_refunded( $e ), 2 );
 		if ( ! is_numeric( $amount_raw ) || (float) $amount_raw <= 0 ) {
