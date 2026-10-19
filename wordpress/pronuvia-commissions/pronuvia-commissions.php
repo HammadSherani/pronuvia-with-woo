@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.4.0
+ * Version:     1.5.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -17,6 +17,10 @@
  * status stays as it is. Each action is also added to the role's `history`
  * in the review meta, so Pronuvia shows the full commission history on the
  * order pages, also of actions made one right after the other.
+ *
+ * An order refund cuts the commission by the refunded share (Pronuvia does
+ * it, and sends the total cut per role in `pronuvia_commission_cuts`); the box
+ * shows the cut and what is left.
  *
  * Once every commission on the order is reviewed it goes into the wallets and
  * Commission Payout (`pronuvia_commission_paid` = yes, "in payout"). It can
@@ -34,6 +38,7 @@ defined( 'ABSPATH' ) || exit;
 const PRONUVIA_COMM_REVIEW_KEY = 'pronuvia_commission_review';
 const PRONUVIA_COMM_PAID_KEY   = 'pronuvia_commission_paid';
 const PRONUVIA_COMM_OUT_KEY    = 'pronuvia_commission_paid_out';
+const PRONUVIA_COMM_CUTS_KEY   = 'pronuvia_commission_cuts';
 const PRONUVIA_COMM_NONCE      = 'pronuvia_commission_review';
 
 function pronuvia_comm_roles() {
@@ -60,6 +65,13 @@ function pronuvia_comm_read( $order ) {
 /** In the wallets / Commission Payout (still changeable until paid out). */
 function pronuvia_comm_in_payout( $order ) {
 	return $order->get_meta( PRONUVIA_COMM_PAID_KEY ) === 'yes';
+}
+
+/** Commission each role lost to order refunds (set by Pronuvia). */
+function pronuvia_comm_cut( $order, $role ) {
+	$raw = $order->get_meta( PRONUVIA_COMM_CUTS_KEY );
+	$val = is_array( $raw ) ? $raw : json_decode( (string) $raw, true );
+	return is_array( $val ) && isset( $val[ $role ] ) ? round( max( 0, (float) $val[ $role ] ), 2 ) : 0.0;
 }
 
 /** Roles whose payout Pronuvia has approved. */
@@ -146,6 +158,10 @@ function pronuvia_comm_box( $post_or_order ) {
 					<?php if ( abs( $original - $amount ) > 0.004 ) : ?>
 						<br><small>was <del><?php echo wp_kses_post( wc_price( $original ) ); ?></del></small>
 					<?php endif; ?>
+					<?php $cut = pronuvia_comm_cut( $order, $role ); if ( $cut > 0 ) : ?>
+						<br><small style="color:#b45309">−<?php echo wp_kses_post( wc_price( $cut ) ); ?> order refunded</small>
+						<br><small>= <strong><?php echo wp_kses_post( wc_price( max( 0, $amount - $cut ) ) ); ?></strong> left</small>
+					<?php endif; ?>
 				</td>
 				<td><?php echo esc_html( $date ); ?></td>
 				<td>
@@ -158,7 +174,7 @@ function pronuvia_comm_box( $post_or_order ) {
 				</td>
 				<td>
 					<?php
-					$left = round( $amount - pronuvia_comm_refunded( $e ), 2 );
+					$left = round( $amount - $cut - pronuvia_comm_refunded( $e ), 2 );
 					if ( 'Paid out' === $locked && 'approved' === $status && $left > 0 ) : ?>
 						<p style="margin:0 0 6px">
 							<input type="number" step="0.01" min="0.01" max="<?php echo esc_attr( number_format( $left, 2, '.', '' ) ); ?>" class="pc-amount" style="width:90px" placeholder="<?php echo esc_attr( number_format( $left, 2, '.', '' ) ); ?>">
@@ -242,7 +258,7 @@ function pronuvia_comm_box( $post_or_order ) {
  * Applies one decision to the review. Returns the updated review and the
  * order note, or a WP_Error.
  */
-function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $note, $by ) {
+function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $note, $by, $cut = 0.0 ) {
 	$roles = pronuvia_comm_roles();
 	if ( ! isset( $roles[ $role ] ) || empty( $review[ $role ] ) || ! is_array( $review[ $role ] ) ) {
 		return new WP_Error( 'role', 'This order has no such commission.' );
@@ -273,7 +289,7 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 		$e['amount'] = $new;
 		$text        = sprintf( '%s commission modified: %s → %s (still %s).', $label, wp_strip_all_tags( wc_price( $current ) ), wp_strip_all_tags( wc_price( $new ) ), $status );
 	} elseif ( 'refund' === $decision ) {
-		$left = round( $current - pronuvia_comm_refunded( $e ), 2 );
+		$left = round( $current - $cut - pronuvia_comm_refunded( $e ), 2 );
 		if ( ! is_numeric( $amount_raw ) || (float) $amount_raw <= 0 ) {
 			return new WP_Error( 'amount', 'Enter the commission amount to refund.' );
 		}
@@ -345,7 +361,8 @@ function pronuvia_comm_ajax() {
 		$decision,
 		wp_unslash( $_POST['amount'] ?? '' ),
 		sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) ),
-		$user && $user->exists() ? $user->display_name : 'admin'
+		$user && $user->exists() ? $user->display_name : 'admin',
+		pronuvia_comm_cut( $order, $role )
 	);
 	if ( is_wp_error( $result ) ) {
 		wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );

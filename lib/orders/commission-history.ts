@@ -10,7 +10,7 @@ import { prisma } from "@/lib/db/prisma";
 // repeated webhook or page view writes nothing twice.
 
 export type CommissionAction =
-  | "APPROVED" | "REJECTED" | "PENDING" | "MODIFIED" | "IN_PAYOUT" | "ADJUSTED" | "PAID_OUT" | "REFUNDED";
+  | "APPROVED" | "REJECTED" | "PENDING" | "MODIFIED" | "IN_PAYOUT" | "ADJUSTED" | "PAID_OUT" | "REFUNDED" | "ORDER_REFUND";
 type HistoryRole = "PHYSICIAN" | "SALES_REP";
 
 export type CommissionEventInput = {

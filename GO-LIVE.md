@@ -36,6 +36,7 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
   - **1.4.0**: har action order ki commission history mein (order pages par "Commission History" table). Deploy ke baad:
     - Mongo index: `db.CommissionEvent.createIndex({ key: 1 }, { unique: true, name: "CommissionEvent_key_key" })` aur `db.CommissionEvent.createIndex({ orderId: 1, createdAt: 1 })`
     - purane orders ki history: `tsx --conditions=react-server --env-file=.env scripts/backfill-commission-history.mts --dry`, phir bina `--dry` (dobara chalana safe hai)
+  - **1.5.0**: WP par order refund (partial / full) → commission refund wale hisse ke barabar khud kat-ti hai, har stage par (payout ke baad wallet minus); WP box mein "−$X order refunded" aur history mein "Order refunded — commission cut"
 - [ ] **Pronuvia SSO plugin** (dashboard se WP admin bina password): Plugins → Add New → Upload `wordpress/pronuvia-sso.zip` → Activate; `wp-config.php` mein `define( 'PRONUVIA_SSO_SECRET', '<WOO_SSO_SECRET wali value>' );`. Pronuvia admin aur WP admin user ka email ek hi ho (warna `define( 'PRONUVIA_SSO_USER', '<WP username>' );`)
 - [ ] Optional (WP developer): hamara order number WP admin mein (Sequential Order Numbers / snippet), "Shipped" status, coupon par "Kis ke liye" field
 

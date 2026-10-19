@@ -23,6 +23,7 @@ import { recordCommissionEvent } from "./commission-history";
 export const REVIEW_META_KEY   = "pronuvia_commission_review";
 export const PAID_META_KEY     = "pronuvia_commission_paid";       // "yes" once in payout
 export const PAID_OUT_META_KEY = "pronuvia_commission_paid_out";   // JSON list of paid-out roles
+export const CUTS_META_KEY     = "pronuvia_commission_cuts";       // JSON { physician, sales_rep }: cut by order refunds
 export const NAME_META_KEYS  = { physician: "pronuvia_physician_name", sales_rep: "pronuvia_sales_rep_name" } as const;
 
 type Role = "physician" | "sales_rep";

@@ -15,6 +15,7 @@ const ACTIONS: Record<CommissionHistoryRow["action"], { label: string; style: st
   ADJUSTED:  { label: "Wallet adjusted",            style: "bg-indigo-50 text-indigo-700" },
   PAID_OUT:  { label: "Paid out",                   style: "bg-violet-50 text-violet-700" },
   REFUNDED:  { label: "Commission refunded",        style: "bg-orange-50 text-orange-700" },
+  ORDER_REFUND: { label: "Order refunded — commission cut", style: "bg-orange-50 text-orange-700" },
 };
 
 export function CommissionHistory({ rows, showRole, showBy }: {

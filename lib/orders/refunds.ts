@@ -6,9 +6,11 @@ import { sendMail } from "@/lib/email/mailer";
 import { orderRefundEmail } from "@/lib/email/templates";
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
-import { moveWallet } from "@/lib/withdrawals/wallet-move";
-import { getWooRefund, REFUND_ID_KEY, type WooOrderDetail } from "@/lib/woo/orders";
-import { reviewManaged } from "./commission-review";
+import { moveWallet, moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
+import { getWooRefund, REFUND_ID_KEY, updateWooOrder, type WooOrderDetail } from "@/lib/woo/orders";
+import { commissionNet, CUTS_META_KEY, reviewManaged } from "./commission-review";
+import { recordCommissionEvent } from "./commission-history";
 
 // Refunds are made in WP admin only. Each Woo refund is picked up when the
 // order is brought up to date (webhook, cron, opening it) and recorded here
@@ -18,6 +20,13 @@ import { reviewManaged } from "./commission-review";
 // taken here). A Stripe refund that fails is kept with its error and tried
 // again by the cron; the team is alerted. Refunds tagged with our id
 // (REFUND_ID_KEY) were made from the Pronuvia admin before and are skipped.
+//
+// Commission follows the order: a refund cuts each role's commission by the
+// refunded share of the items (a full refund cuts all of it), at any stage.
+// Commission already in the wallet comes off it (below zero if it was paid
+// out already); a rejected one has nothing in the wallet, only its amount is
+// cut for when it is approved. Each cut is in the Commission History, and the
+// WP Commissions box shows it (CUTS_META_KEY).
 //
 // Commission: until the monthly sweep the clawback only lowers what the sweep
 // credits (it credits commission − clawback); after it, the clawback is taken
@@ -112,11 +121,10 @@ async function record(order: RefundOrder, p: Plan, opts: {
   const repLeft = Math.max(0, order.salesRepCommissionAmount  - (order.salesRepClawback  ?? 0));
   const drLeft  = Math.max(0, order.physicianCommissionAmount - (order.physicianClawback ?? 0));
   const share   = Math.min(1, p.eventTotal / (order.subtotal > 0 ? order.subtotal : order.total));
-  // Commission paid through the WP review is taken back only by the admin's
-  // "Refund commission" on the WP order page, not by the order refund
+  // The refunded share of each commission (all that is left on a full refund)
   const managed = reviewManaged(order);
-  const salesRepClawback  = managed ? 0 : p.isFull ? repLeft : round2(Math.min(repLeft, order.salesRepCommissionAmount  * share));
-  const physicianClawback = managed ? 0 : p.isFull ? drLeft  : round2(Math.min(drLeft,  order.physicianCommissionAmount * share));
+  const salesRepClawback  = p.isFull ? repLeft : round2(Math.min(repLeft, order.salesRepCommissionAmount  * share));
+  const physicianClawback = p.isFull ? drLeft  : round2(Math.min(drLeft,  order.physicianCommissionAmount * share));
 
   let refund;
   try {
@@ -161,23 +169,27 @@ async function record(order: RefundOrder, p: Plan, opts: {
     }
   }
 
-  // Commission already paid out: take it back now (negative balance allowed)
-  if (order.commissionPaid) {
-    for (const [role, id, amount] of [
-      ["SALES_REP", order.salesRepId, salesRepClawback],
-      ["PHYSICIAN", order.physicianId, physicianClawback],
-    ] as const) {
-      if (!id || amount <= 0) continue;
-      const balance = await moveWallet(role, id, -amount);
-      await prisma.walletTransaction.create({
-        data: {
-          userId: id, userRole: role, amount, type: "DEBIT",
-          description: `Commission clawback — refund #${opts.refundNumber} on order #${order.orderNumber}`,
-          orderId: order.id, periodKey: period.key, balance,
-        },
+  // Commission in the wallet (in payout or paid out): the approved part of
+  // the cut comes off it now (negative balance allowed)
+  for (const [role, id, cut, amount, claw, review] of [
+    ["SALES_REP", order.salesRepId, salesRepClawback, order.salesRepCommissionAmount, order.salesRepClawback, order.salesRepCommissionReview],
+    ["PHYSICIAN", order.physicianId, physicianClawback, order.physicianCommissionAmount, order.physicianClawback, order.physicianCommissionReview],
+  ] as const) {
+    if (!id || cut <= 0) continue;
+    const debit = order.commissionPaid ? round2(commissionNet(review, amount, claw) - commissionNet(review, amount, (claw ?? 0) + cut)) : 0;
+    if (debit > 0) {
+      await moveWalletForOrder({
+        role, userId: id, orderId: order.id, delta: -debit,
+        description: `Commission cut — refund #${opts.refundNumber} on order #${order.orderNumber}`,
       });
-      await syncPendingPayoutRequest(id, role, balance);
+      await upsertRunningPayoutRequest(id, role);
     }
+    const before = round2(Math.max(0, amount - (claw ?? 0)));
+    await recordCommissionEvent({
+      key: `order-refund:${refund.id}:${role}`, orderId: order.id, userRole: role, action: "ORDER_REFUND",
+      amount: round2(before - cut), previousAmount: before, walletChange: debit ? -debit : null,
+      note: `Refund #${opts.refundNumber}: ${p.isFull ? "order fully refunded" : `$${p.eventTotal.toFixed(2)} of $${order.subtotal.toFixed(2)} refunded`}${opts.reason.trim() ? ` (${opts.reason.trim()})` : ""}`,
+    });
   }
 
   await prisma.order.update({
@@ -191,6 +203,17 @@ async function record(order: RefundOrder, p: Plan, opts: {
       physicianClawback: round2((order.physicianClawback ?? 0) + physicianClawback),
     },
   });
+
+  // The WP Commissions box shows what order refunds cut
+  if (order.wooOrderId && (salesRepClawback > 0 || physicianClawback > 0)) {
+    const all = await prisma.orderRefund.findMany({ where: { orderId: order.id }, select: { salesRepClawback: true, physicianClawback: true } });
+    const cuts = {
+      physician: round2(all.reduce((t, r) => t + r.physicianClawback, 0)),
+      sales_rep: round2(all.reduce((t, r) => t + r.salesRepClawback, 0)),
+    };
+    await updateWooOrder(order.wooOrderId, { meta_data: [{ key: CUTS_META_KEY, value: JSON.stringify(cuts) }] })
+      .catch((e) => console.error(`[refunds] order ${order.orderNumber}: commission cut not sent to WooCommerce:`, e));
+  }
 
   await refundEmail(order, p, opts.amount, opts.reason);
   return { id: refund.id, salesRepClawback, physicianClawback };
