@@ -1,5 +1,4 @@
 import { listOrders }           from "@/actions/admin/manage-orders";
-import { ReturnOrderModal }     from "@/components/admin/return-order-modal";
 import { OrdersTableClient }   from "@/components/admin/orders-table-client";
 import { OrderStatusFilter }   from "@/components/admin/order-status-filter";
 import { OrderSearchInput }    from "@/components/admin/order-search-input";
@@ -62,10 +61,9 @@ export default async function OrdersPage({
         <div>
           <h1 className="text-xl font-bold text-gray-800">Order</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Track orders, update statuses, and manage commission clawbacks
+            Order details and tracking. Status, refunds and notes are managed in WooCommerce.
           </p>
         </div>
-        <ReturnOrderModal />
       </div>
 
       {/* ── Summary cards ──────────────────────────────────────────── */}

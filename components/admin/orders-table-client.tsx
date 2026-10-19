@@ -1,10 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
 import { OrderStatus } from "@/generated/prisma/enums";
-import { bulkCompleteOrders } from "@/actions/admin/manage-orders";
 import { formatDate } from "@/lib/utils/timezone";
 
 type Order = {
@@ -39,60 +36,12 @@ const statusBadge: Record<OrderStatus, string> = {
   REFUNDED:   "bg-orange-50  text-orange-700  border-orange-200",
 };
 
-// Orders eligible for bulk-complete (commission not yet released)
-const COMPLETABLE = new Set<OrderStatus>([
-  OrderStatus.PENDING, OrderStatus.PROCESSING,
-  OrderStatus.SHIPPED, OrderStatus.DELIVERED,
-]);
-
 function fmt(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 export function OrdersTableClient({ orders }: { orders: Order[] }) {
   const router = useRouter();
-  const [selected,   setSelected]   = useState<Set<string>>(new Set());
-  const [isPending,  startTransition] = useTransition();
-
-  const completableIds = orders
-    .filter((o) => COMPLETABLE.has(o.status) && !o.commissionPaid)
-    .map((o) => o.id);
-
-  const allCompletableSelected =
-    completableIds.length > 0 &&
-    completableIds.every((id) => selected.has(id));
-
-  function toggleRow(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.checked) {
-      setSelected(new Set(completableIds));
-    } else {
-      setSelected(new Set());
-    }
-  }
-
-  function handleBulkComplete() {
-    if (!selected.size) return;
-    const ids = [...selected];
-    startTransition(async () => {
-      const res = await bulkCompleteOrders(ids);
-      if (res?.success) {
-        toast.success(res.message ?? "Orders marked as Completed.");
-        setSelected(new Set());
-        router.refresh();
-      } else {
-        toast.error(res?.message ?? "Bulk action failed.");
-      }
-    });
-  }
 
   if (orders.length === 0) {
     return (
@@ -111,55 +60,13 @@ export function OrdersTableClient({ orders }: { orders: Order[] }) {
 
   return (
     <div>
-      {/* Bulk action bar */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 px-5 py-3 bg-teal-50 border-b border-teal-100">
-          <span className="text-sm font-semibold text-teal-800">
-            {selected.size} order{selected.size !== 1 ? "s" : ""} selected
-          </span>
-          <button
-            type="button"
-            onClick={handleBulkComplete}
-            disabled={isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 rounded-lg transition-colors"
-          >
-            {isPending ? (
-              <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-            {isPending ? "Processing…" : "Mark as Completed"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelected(new Set())}
-            className="ml-auto text-xs text-teal-600 hover:text-teal-800 underline"
-          >
-            Clear selection
-          </button>
-        </div>
-      )}
-
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[900px]">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50/70">
-              <th className="pl-5 pr-2 py-3.5 w-8">
-                {completableIds.length > 0 && (
-                  <input
-                    type="checkbox"
-                    checked={allCompletableSelected}
-                    onChange={toggleSelectAll}
-                    title="Select all completable orders on this page"
-                    className="w-4 h-4 rounded border-gray-300 accent-teal-600 cursor-pointer"
-                  />
-                )}
-              </th>
               {["Order #", "Date", "Items", "Subtotal", "Shipping", "Total", "Tracking", "Status", "Origin"].map((h) => (
                 <th key={h}
-                  className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  className="text-left first:pl-5 px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                   {h}
                 </th>
               ))}
@@ -169,31 +76,17 @@ export function OrdersTableClient({ orders }: { orders: Order[] }) {
           <tbody className="divide-y divide-gray-50">
             {orders.map((o) => {
               const isReturned    = !!o.returnedAt;
-              const isCompletable = COMPLETABLE.has(o.status) && !o.commissionPaid;
-              const isChecked     = selected.has(o.id);
               const itemCount     = Array.isArray(o.items) ? o.items.length : 0;
               const shipping      = o.shippingRate ?? 0;
               return (
                 <tr
                   key={o.id}
                   onClick={() => router.push(`/admin/orders/${o.id}`)}
-                  className={`hover:bg-gray-900/5 transition-colors cursor-pointer select-none ${isReturned ? "opacity-60" : ""} ${isChecked ? "bg-teal-50/60" : ""}`}
+                  className={`hover:bg-gray-900/5 transition-colors cursor-pointer select-none ${isReturned ? "opacity-60" : ""}`}
                 >
-                  {/* Checkbox */}
-                  <td className="pl-5 pr-2 py-4" onClick={(e) => e.stopPropagation()}>
-                    {isCompletable && (
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {}}
-                        onClick={(e) => toggleRow(o.id, e)}
-                        className="w-4 h-4 rounded border-gray-300 accent-teal-600 cursor-pointer"
-                      />
-                    )}
-                  </td>
 
                   {/* Order # */}
-                  <td className="px-4 py-4">
+                  <td className="pl-5 pr-4 py-4">
                     <p className="font-mono text-xs font-semibold text-gray-700">{o.orderNumber}</p>
                     {o.physician ? (
                       <p className="text-[11px] text-gray-400 mt-0.5">{o.physician.firstName} {o.physician.lastName}</p>
