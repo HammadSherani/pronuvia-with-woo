@@ -625,6 +625,7 @@ export function orderConfirmationEmail(d: OrderEmailData) {
     ? (name ? `Hello ${name},` : "Hello,")
     : (d.firstName ? `Hi ${d.firstName},` : "Hi there,");
   const dateStr  = formatDateLong(d.orderDate ?? new Date());
+  // The button goes to the Pronuvia login: not for patients, who have no account
   const orderStatusLink = `${getAppUrl()}/login`;
   const subtotal  = d.items.reduce((s, i) => s + i.lineTotal, 0);
   const shipping  = d.shippingCost ?? 0;
@@ -736,7 +737,7 @@ export function orderConfirmationEmail(d: OrderEmailData) {
              </p>`
       )}
 
-      ${btn(orderStatusLink, "View Order Status")}
+      ${d.isPatientEmail ? "" : btn(orderStatusLink, "View Order Status")}
 
       ${sectionLabel("Need Help?")}
       <p style="margin:0 0 24px;font-size:13px;color:${C.textSoft};line-height:1.7;">
