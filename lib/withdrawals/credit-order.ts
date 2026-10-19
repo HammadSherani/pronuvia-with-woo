@@ -4,6 +4,7 @@ import { commissionNet } from "@/lib/orders/commission-review";
 import { markCommissionPaidInWoo } from "@/lib/orders/commission-paid";
 import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
 import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { recordCommissionEvent } from "@/lib/orders/commission-history";
 
 /**
  * Puts an order's commission into the wallets as soon as the admin has
@@ -50,6 +51,7 @@ export async function creditReviewedOrder(orderId: string): Promise<boolean> {
     if (net <= 0) continue;
     await moveWalletForOrder({ role: r.role, userId: r.id!, orderId: order.id, delta: net, description: `Commission for order #${order.orderNumber}` });
     await upsertRunningPayoutRequest(r.id!, r.role);
+    await recordCommissionEvent({ key: `in-payout:${order.id}:${r.role}`, orderId: order.id, userRole: r.role, action: "IN_PAYOUT", amount: r.amount, walletChange: net });
   }
 
   // The WP Commissions box shows it in payout (still changeable until paid out)

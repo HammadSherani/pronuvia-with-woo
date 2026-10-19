@@ -356,6 +356,25 @@ model CommissionRefund {
   createdAt DateTime @default(now())
 }
 
+// The history of one order's commission per role, shown on the order pages:
+// each review on the WP order page (approved / rejected / modified), going
+// into Commission Payout, the payout, and commission refunds.
+model CommissionEvent {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  key            String   @unique     // one row per WP history entry / payout / refund
+  orderId        String   @db.ObjectId
+  userRole       Role                 // PHYSICIAN or SALES_REP
+  action         String               // APPROVED | REJECTED | PENDING | MODIFIED | IN_PAYOUT | PAID_OUT | REFUNDED
+  amount         Float                // the commission after this event
+  previousAmount Float?               // set when the amount changed
+  walletChange   Float?               // money into (+) or out of (−) the wallet
+  note           String?
+  by             String?              // the WP admin; shown to admins only
+  createdAt      DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
+
 model OrderNote {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   orderId   String   @db.ObjectId

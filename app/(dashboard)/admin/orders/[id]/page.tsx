@@ -12,6 +12,8 @@ import { OrderNotesList } from "@/components/admin/order-notes-list";
 import { APP_TIMEZONE } from "@/lib/utils/timezone";
 import { wpAdmin } from "@/lib/woo/admin-links";
 import { isFedEx2Day } from "@/lib/orders/shipping-method";
+import { getCommissionHistory } from "@/lib/orders/commission-history";
+import { CommissionHistory } from "@/components/orders/commission-history";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -145,6 +147,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   ]);
   if (!order) notFound();
 
+  const commissionHistory = await getCommissionHistory(order, ["PHYSICIAN", "SALES_REP"], { withBy: true });
   const items = order.items as unknown as OrderItem[];
 
   // Build per-item refunded qty from OrderRefund records (multi-refund system)
@@ -687,6 +690,11 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                   original={order.physicianCommissionOriginal} note={reviewNote("physician")}
                   wooHref={order.wooOrderId ? wpAdmin.editOrder(order.wooOrderId) : null} />
               </div>
+            </div>
+
+            {/* ── Commission history (doctor and rep) ───────────────────── */}
+            <div className="no-print">
+              <CommissionHistory rows={commissionHistory} showRole showBy />
             </div>
 
             {/* ── Refund Activity Log ──────────────────────────────────── */}

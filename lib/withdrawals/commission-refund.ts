@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { parseReviewMeta } from "@/lib/orders/commission-review";
 import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
 import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { recordCommissionEvent } from "@/lib/orders/commission-history";
 
 /**
  * Commission the admin took back on the WP order page ("Refund commission")
@@ -53,6 +54,11 @@ export async function applyCommissionRefunds(orderId: string, raw: unknown): Pro
       // Set, not increment: an unset (null) clawback does not increment in MongoDB.
       // This refund is claimed above, so no other one adds to it at the same time.
       await prisma.order.update({ where: { id: orderId }, data: { [clawField]: Number(((order[clawField] ?? 0) + amount).toFixed(2)) } });
+      await recordCommissionEvent({
+        key: `refund:${refundKey}`, orderId, userRole: role, action: "REFUNDED",
+        amount: Number((left - amount).toFixed(2)), previousAmount: left, walletChange: -amount,
+        note: r.note, by: r.by, createdAt: r.at && !Number.isNaN(Date.parse(r.at)) ? new Date(r.at) : undefined,
+      });
       await upsertRunningPayoutRequest(userId, role);
       applied++;
     }

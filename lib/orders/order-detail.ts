@@ -1,9 +1,11 @@
 import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { refreshOrderFromWoo } from "./order-woo";
+import { getCommissionHistory } from "./commission-history";
 
 // The order detail a sales rep or physician sees for one of their orders:
-// the order, its refunds, and how much of each item was refunded.
+// the order, its refunds, how much of each item was refunded, and the
+// history of their own commission on it.
 
 export type DetailItem = {
   title: string; variantSize?: string | null; sku?: string | null;
@@ -51,7 +53,9 @@ export async function getOwnOrderDetail(orderNumber: string, owner: { role: "SAL
     ? { rate: order.salesRepCommissionRate,  amount: order.salesRepCommissionAmount,  clawback: order.salesRepClawback  ?? 0 }
     : { rate: order.physicianCommissionRate, amount: order.physicianCommissionAmount, clawback: order.physicianClawback ?? 0 };
 
-  return { order, items, refunds, refundedQty, refundedValue, commission };
+  const history = await getCommissionHistory(order, [owner.role], { withBy: false });
+
+  return { order, items, refunds, refundedQty, refundedValue, commission, history };
 }
 
 export type OwnOrderDetail = NonNullable<Awaited<ReturnType<typeof getOwnOrderDetail>>>;

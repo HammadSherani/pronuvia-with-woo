@@ -4,6 +4,7 @@ import { CommissionReview } from "@/generated/prisma/enums";
 import { addWooOrderNote, updateWooOrder } from "@/lib/woo/orders";
 import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
 import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { recordCommissionEvent } from "./commission-history";
 
 // Commission review: each order's commission (doctor, sales rep) is approved,
 // rejected or modified by the admin on the WP order page (plugin
@@ -36,6 +37,8 @@ export type ReviewEntry = {
   by?:      string;
   // Commission the admin took back after it was paid ("Refund commission")
   refunds?: { id: string; amount: number; note?: string; at?: string; by?: string }[];
+  // Every review action, written by the plugin (1.4.0+)
+  history?: { id: string; action: "approved" | "rejected" | "modified"; amount: number; prev?: number; note?: string; at?: string; by?: string }[];
 };
 export type ReviewMeta = Partial<Record<Role, ReviewEntry>>;
 
@@ -111,6 +114,18 @@ function parse(raw: unknown): ReviewMeta | null {
               : [];
           })
         : undefined,
+      history: Array.isArray(e.history)
+        ? (e.history as Record<string, unknown>[]).flatMap((h) => {
+            const amt = Number(h?.amount), prev = Number(h?.prev);
+            const action = h?.action;
+            return typeof h?.id === "string" && h.id && (action === "approved" || action === "rejected" || action === "modified") && Number.isFinite(amt) && amt >= 0
+              ? [{ id: h.id.slice(0, 80), action, amount: Math.round(amt * 100) / 100,
+                   prev: Number.isFinite(prev) && h?.prev !== undefined && h?.prev !== null ? Math.round(prev * 100) / 100 : undefined,
+                   note: typeof h.note === "string" ? h.note.slice(0, 500) : undefined,
+                   at: typeof h.at === "string" ? h.at : undefined, by: typeof h.by === "string" ? h.by.slice(0, 120) : undefined }]
+              : [];
+          })
+        : undefined,
     };
   }
   return out;
@@ -151,6 +166,23 @@ export async function applyCommissionReview(orderId: string, raw: unknown): Prom
     const e = meta[role];
     if (!e) continue;
     const f = FIELDS[role];
+
+    // The plugin's history: every action, also ones made between two refreshes.
+    // Actions after the payout were not applied, so they are left out.
+    const paidOutAt = order[f.paidOut] as Date | null;
+    const written: string[] = [];
+    for (const h of e.history ?? []) {
+      const at = h.at && !Number.isNaN(Date.parse(h.at)) ? new Date(h.at) : new Date();
+      if (paidOutAt && at > paidOutAt) continue;
+      const ev = await recordCommissionEvent({
+        key: `wp:${orderId}:${role}:${h.id}`, orderId, userRole: f.role,
+        action: h.action === "approved" ? "APPROVED" : h.action === "rejected" ? "REJECTED" : "MODIFIED",
+        amount: h.amount, previousAmount: h.action === "modified" ? h.prev ?? null : null,
+        note: h.note, by: h.by, createdAt: at,
+      });
+      if (ev) written.push(ev.id);
+    }
+
     const review   = order[f.review] as CommissionReview | null;
     // "pending" never undoes a decision; while awaiting it can still carry a modified amount
     if (e.status === "pending" && review !== CommissionReview.AWAITING) continue;
@@ -191,16 +223,39 @@ export async function applyCommissionReview(orderId: string, raw: unknown): Prom
 
     // In payout: the wallet follows the new decision
     const userId = order[f.user];
-    if (!order.commissionPaid || !userId) continue;
     const clawback = order[f.clawback] as number | null;
-    const delta = Number((commissionNet(next, amount, clawback) - commissionNet(review, current, clawback)).toFixed(2));
-    if (delta === 0) continue;
-    const what = e.status === "rejected" ? "rejected" : amount !== current ? `changed to $${amount.toFixed(2)}` : "approved";
-    await moveWalletForOrder({
-      role: f.role, userId, orderId, delta,
-      description: `Commission adjusted — order #${order.orderNumber} (${what}${e.note ? `: ${e.note}` : ""})`,
-    });
-    await upsertRunningPayoutRequest(userId, f.role);
+    const delta = order.commissionPaid && userId
+      ? Number((commissionNet(next, amount, clawback) - commissionNet(review, current, clawback)).toFixed(2))
+      : 0;
+    if (delta !== 0 && userId) {
+      const what = e.status === "rejected" ? "rejected" : amount !== current ? `changed to $${amount.toFixed(2)}` : "approved";
+      await moveWalletForOrder({
+        role: f.role, userId, orderId, delta,
+        description: `Commission adjusted — order #${order.orderNumber} (${what}${e.note ? `: ${e.note}` : ""})`,
+      });
+      await upsertRunningPayoutRequest(userId, f.role);
+    }
+
+    // History: the wallet change goes on the newest action; an older plugin
+    // without history gets one row for the change seen here
+    if (e.history?.length) {
+      // (a refresh running at the same time may have written the rows)
+      const newest = written.length
+        ? written[written.length - 1]
+        : (await prisma.commissionEvent.findFirst({
+            where: { orderId, userRole: f.role, key: { startsWith: `wp:${orderId}:${role}:` } },
+            orderBy: { createdAt: "desc" }, select: { id: true },
+          }))?.id;
+      if (delta !== 0 && newest) await prisma.commissionEvent.update({ where: { id: newest }, data: { walletChange: delta } });
+    } else {
+      const statusChanged = (review ?? CommissionReview.APPROVED) !== next;
+      await recordCommissionEvent({
+        orderId, userRole: f.role,
+        action: !statusChanged ? "MODIFIED" : next === CommissionReview.APPROVED ? "APPROVED" : next === CommissionReview.REJECTED ? "REJECTED" : "PENDING",
+        amount, previousAmount: amount !== current ? current : null, walletChange: delta || null,
+        note: e.note, by: e.by, createdAt: e.at && !Number.isNaN(Date.parse(e.at)) ? new Date(e.at) : undefined,
+      });
+    }
   }
 
   if (notPaidAgain.length && order.wooOrderId) await restorePaidOutReview(order, raw, notPaidAgain);

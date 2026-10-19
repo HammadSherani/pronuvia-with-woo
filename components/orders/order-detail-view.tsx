@@ -3,6 +3,7 @@ import { Country } from "country-state-city";
 import { OrderStatus } from "@/generated/prisma/enums";
 import { formatDate, formatDateTime } from "@/lib/utils/timezone";
 import type { OwnOrderDetail } from "@/lib/orders/order-detail";
+import { CommissionHistory } from "./commission-history";
 
 // Read-only order detail for the sales rep and physician portals, showing
 // refunds the way the admin order page does.
@@ -62,7 +63,7 @@ export function OrderDetailView({ detail, backHref, invoiceHref, viewer }: {
   invoiceHref: string;
   viewer:      "SALES_REP" | "PHYSICIAN";
 }) {
-  const { order, items, refunds, refundedQty, refundedValue, commission } = detail;
+  const { order, items, refunds, refundedQty, refundedValue, commission, history } = detail;
   const returned  = order.returnedTotal ?? 0;
   const netTotal  = order.total - returned;
   const netComm   = Math.max(0, commission.amount - commission.clawback);
@@ -273,6 +274,9 @@ export function OrderDetailView({ detail, backHref, invoiceHref, viewer }: {
           </div>
         </div>
       )}
+
+      {/* Commission history (own commission only; no admin names) */}
+      <CommissionHistory rows={history} showRole={false} showBy={false} />
     </div>
   );
 }

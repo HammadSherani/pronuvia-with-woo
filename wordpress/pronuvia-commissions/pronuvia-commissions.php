@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.3.0
+ * Version:     1.4.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -14,7 +14,9 @@
  *
  * What each status offers: pending → Approve, Reject, Modify; approved →
  * Reject; rejected → Approve, Modify. Modify changes only the amount, the
- * status stays as it is.
+ * status stays as it is. Each action is also added to the role's `history`
+ * in the review meta, so Pronuvia shows the full commission history on the
+ * order pages, also of actions made one right after the other.
  *
  * Once every commission on the order is reviewed it goes into the wallets and
  * Commission Payout (`pronuvia_commission_paid` = yes, "in payout"). It can
@@ -295,6 +297,17 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 	$e['note']     = $note;
 	$e['at']       = gmdate( 'c' );
 	$e['by']       = $by;
+	$history       = array_values( (array) ( $e['history'] ?? array() ) );
+	$history[]     = array(
+		'id'     => uniqid( 'h', true ),
+		'action' => 'approve' === $decision ? 'approved' : ( 'reject' === $decision ? 'rejected' : 'modified' ),
+		'amount' => (float) $e['amount'],
+		'prev'   => 'modify' === $decision ? $current : null,
+		'note'   => $note,
+		'at'     => $e['at'],
+		'by'     => $by,
+	);
+	$e['history']    = array_slice( $history, -100 );
 	$review[ $role ] = $e;
 	if ( '' !== $note ) {
 		$text .= ' Note: ' . $note;

@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import type { Prisma, Role } from "@/generated/prisma/client";
 
 /**
@@ -13,9 +14,9 @@ export async function lockPaidOutCommission(
   tx: Prisma.TransactionClient,
   request: { userId: string; userRole: Role; snapshotAt: Date | null },
 ): Promise<string[]> {
-  const [userField, paidOutField] = request.userRole === "PHYSICIAN"
-    ? ["physicianId", "physicianCommissionPaidOutAt"] as const
-    : ["salesRepId", "salesRepCommissionPaidOutAt"] as const;
+  const [userField, paidOutField, amountField] = request.userRole === "PHYSICIAN"
+    ? ["physicianId", "physicianCommissionPaidOutAt", "physicianCommissionAmount"] as const
+    : ["salesRepId", "salesRepCommissionPaidOutAt", "salesRepCommissionAmount"] as const;
   const upTo = request.snapshotAt ?? new Date();
   const orders = await tx.order.findMany({
     where: {
@@ -26,9 +27,18 @@ export async function lockPaidOutCommission(
         { OR: [{ [paidOutField]: null }, { [paidOutField]: { isSet: false } }] },
       ],
     },
-    select: { id: true },
+    select: { id: true, [amountField]: true },
   });
   const ids = orders.map((o) => o.id);
-  if (ids.length) await tx.order.updateMany({ where: { id: { in: ids } }, data: { [paidOutField]: new Date() } });
+  if (ids.length) {
+    await tx.order.updateMany({ where: { id: { in: ids } }, data: { [paidOutField]: new Date() } });
+    // Commission history: "Paid out" on each order
+    await tx.commissionEvent.createMany({
+      data: orders.map((o) => ({
+        key: `paid-out:${o.id}:${request.userRole}:${randomUUID()}`, orderId: o.id, userRole: request.userRole,
+        action: "PAID_OUT", amount: Number((o as Record<string, unknown>)[amountField] ?? 0),
+      })),
+    });
+  }
   return ids;
 }
