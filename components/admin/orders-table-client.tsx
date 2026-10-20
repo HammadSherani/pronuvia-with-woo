@@ -75,14 +75,16 @@ export function OrdersTableClient({ orders }: { orders: Order[] }) {
 
           <tbody className="divide-y divide-gray-50">
             {orders.map((o) => {
-              const isReturned    = !!o.returnedAt;
+              // Only a fully refunded order is dimmed; a partial refund gets a badge
+              const isRefunded    = o.status === OrderStatus.REFUNDED;
+              const isPartial     = !!o.returnedAt && !isRefunded;
               const itemCount     = Array.isArray(o.items) ? o.items.length : 0;
               const shipping      = o.shippingRate ?? 0;
               return (
                 <tr
                   key={o.id}
                   onClick={() => router.push(`/admin/orders/${o.id}`)}
-                  className={`hover:bg-gray-900/5 transition-colors cursor-pointer select-none ${isReturned ? "opacity-60" : ""}`}
+                  className={`hover:bg-gray-900/5 transition-colors cursor-pointer select-none ${isRefunded ? "opacity-60" : ""}`}
                 >
 
                   {/* Order # */}
@@ -93,9 +95,9 @@ export function OrdersTableClient({ orders }: { orders: Order[] }) {
                     ) : o.salesRep ? (
                       <p className="text-[11px] text-gray-400 mt-0.5">{o.salesRep.name}</p>
                     ) : null}
-                    {isReturned && (
+                    {isPartial && (
                       <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-orange-100 text-orange-600 text-[10px] font-semibold rounded-full border border-orange-200">
-                        Returned
+                        Partially refunded
                       </span>
                     )}
                   </td>
