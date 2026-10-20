@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.5.0
+ * Version:     1.6.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -19,8 +19,9 @@
  * order pages, also of actions made one right after the other.
  *
  * An order refund cuts the commission by the refunded share (Pronuvia does
- * it, and sends the total cut per role in `pronuvia_commission_cuts`); the box
- * shows the cut and what is left.
+ * it, and sends the total cut per role in `pronuvia_commission_cuts`). The box
+ * shows what is left as the commission; Modify sets what is left (the cut
+ * stays on top); with nothing left the row offers no actions.
  *
  * Once every commission on the order is reviewed it goes into the wallets and
  * Commission Payout (`pronuvia_commission_paid` = yes, "in payout"). It can
@@ -89,6 +90,11 @@ function pronuvia_comm_locked( $order, $role ) {
 	if ( in_array( $role, pronuvia_comm_paid_out( $order ), true ) ) {
 		return 'Paid out';
 	}
+	$review = pronuvia_comm_read( $order );
+	$cut    = pronuvia_comm_cut( $order, $role );
+	if ( $cut > 0 && (float) ( $review[ $role ]['amount'] ?? 0 ) - $cut <= 0.004 ) {
+		return 'Order refunded: no commission left';
+	}
 	if ( ! pronuvia_comm_in_payout( $order ) && in_array( $order->get_status(), array( 'cancelled', 'refunded', 'trash' ), true ) ) {
 		return 'Order ' . $order->get_status();
 	}
@@ -146,6 +152,8 @@ function pronuvia_comm_box( $post_or_order ) {
 			$original = isset( $e['original'] ) ? (float) $e['original'] : $amount;
 			$status   = (string) ( $e['status'] ?? 'pending' );
 			$name     = (string) $order->get_meta( $info['name_key'] );
+			$cut      = pronuvia_comm_cut( $order, $role );
+			$net      = round( max( 0, $amount - $cut ), 2 );   // what is left after order refunds
 			$locked   = pronuvia_comm_locked( $order, $role );
 			$any_out  = $any_out || 'Paid out' === $locked;
 			$any_open = $any_open || ! $locked;
@@ -154,13 +162,13 @@ function pronuvia_comm_box( $post_or_order ) {
 			<tr data-role="<?php echo esc_attr( $role ); ?>">
 				<td><?php echo esc_html( $name ? $name : $info['label'] ); ?><br><small><?php echo esc_html( $info['label'] ); ?></small></td>
 				<td>
-					<?php echo wp_kses_post( wc_price( $amount ) ); ?>
-					<?php if ( abs( $original - $amount ) > 0.004 ) : ?>
-						<br><small>was <del><?php echo wp_kses_post( wc_price( $original ) ); ?></del></small>
-					<?php endif; ?>
-					<?php $cut = pronuvia_comm_cut( $order, $role ); if ( $cut > 0 ) : ?>
+					<strong><?php echo wp_kses_post( wc_price( $net ) ); ?></strong>
+					<?php if ( $cut > 0 ) : ?>
+						<br><small>of <del><?php echo wp_kses_post( wc_price( $amount ) ); ?></del></small>
 						<br><small style="color:#b45309">−<?php echo wp_kses_post( wc_price( $cut ) ); ?> order refunded</small>
-						<br><small>= <strong><?php echo wp_kses_post( wc_price( max( 0, $amount - $cut ) ) ); ?></strong> left</small>
+					<?php endif; ?>
+					<?php if ( abs( $original - $amount ) > 0.004 ) : ?>
+						<br><small>earned <?php echo wp_kses_post( wc_price( $original ) ); ?>, modified</small>
 					<?php endif; ?>
 				</td>
 				<td><?php echo esc_html( $date ); ?></td>
@@ -196,7 +204,7 @@ function pronuvia_comm_box( $post_or_order ) {
 						</p>
 						<?php if ( in_array( 'modify', $allowed, true ) ) : ?>
 							<p style="margin:0 0 6px">
-								<input type="number" step="0.01" min="0" class="pc-amount" style="width:90px" value="<?php echo esc_attr( number_format( $amount, 2, '.', '' ) ); ?>">
+								<input type="number" step="0.01" min="0" class="pc-amount" style="width:90px" value="<?php echo esc_attr( number_format( $net, 2, '.', '' ) ); ?>">
 								<button type="button" class="button" data-decision="modify">Modify</button>
 							</p>
 						<?php endif; ?>
@@ -266,6 +274,8 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 	$e        = $review[ $role ];
 	$current  = (float) ( $e['amount'] ?? 0 );
 	$original = isset( $e['original'] ) ? (float) $e['original'] : $current;
+	$cut      = round( max( 0, (float) $cut ), 2 );
+	$net      = round( max( 0, $current - $cut ), 2 );   // what is left after order refunds
 	$label    = $roles[ $role ]['label'];
 	$note     = trim( (string) $note );
 	$status   = (string) ( $e['status'] ?? 'pending' );
@@ -276,18 +286,19 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 
 	if ( 'approve' === $decision ) {
 		$e['status'] = 'approved';
-		$text        = sprintf( '%s commission approved: %s.', $label, wp_strip_all_tags( wc_price( $current ) ) );
+		$text        = sprintf( '%s commission approved: %s.', $label, wp_strip_all_tags( wc_price( $net ) ) );
 	} elseif ( 'reject' === $decision ) {
 		$e['status'] = 'rejected';
-		$text        = sprintf( '%s commission rejected (%s).', $label, wp_strip_all_tags( wc_price( $current ) ) );
+		$text        = sprintf( '%s commission rejected (%s).', $label, wp_strip_all_tags( wc_price( $net ) ) );
 	} elseif ( 'modify' === $decision ) {
 		if ( ! is_numeric( $amount_raw ) || (float) $amount_raw < 0 || (float) $amount_raw > 1000000 ) {
 			return new WP_Error( 'amount', 'Enter a commission amount of 0 or more.' );
 		}
-		// Only the amount: the status stays as it is
+		// Only the amount: the status stays as it is. The admin sets what is
+		// left; the order refunds' cut stays on top of it
 		$new         = round( (float) $amount_raw, 2 );
-		$e['amount'] = $new;
-		$text        = sprintf( '%s commission modified: %s → %s (still %s).', $label, wp_strip_all_tags( wc_price( $current ) ), wp_strip_all_tags( wc_price( $new ) ), $status );
+		$e['amount'] = round( $new + $cut, 2 );
+		$text        = sprintf( '%s commission modified: %s → %s (still %s).', $label, wp_strip_all_tags( wc_price( $net ) ), wp_strip_all_tags( wc_price( $new ) ), $status );
 	} elseif ( 'refund' === $decision ) {
 		$left = round( $current - $cut - pronuvia_comm_refunded( $e ), 2 );
 		if ( ! is_numeric( $amount_raw ) || (float) $amount_raw <= 0 ) {
@@ -317,8 +328,8 @@ function pronuvia_comm_decide( array $review, $role, $decision, $amount_raw, $no
 	$history[]     = array(
 		'id'     => uniqid( 'h', true ),
 		'action' => 'approve' === $decision ? 'approved' : ( 'reject' === $decision ? 'rejected' : 'modified' ),
-		'amount' => (float) $e['amount'],
-		'prev'   => 'modify' === $decision ? $current : null,
+		'amount' => round( max( 0, (float) $e['amount'] - $cut ), 2 ),
+		'prev'   => 'modify' === $decision ? $net : null,
 		'note'   => $note,
 		'at'     => $e['at'],
 		'by'     => $by,
