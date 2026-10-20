@@ -2,7 +2,9 @@
 // review happened before it was recorded, from
 //   - the plugin's notes on the WP order ("Doctor commission approved: $72.00." …),
 //   - the wallet entries ("Commission for order", "Commission adjusted"),
-//   - commission refunds, and the payout (paid-out date).
+//   - order refunds (the commission they cut), commission refunds, and the
+//     payout (paid-out date).
+// Orders refunded before the WP box showed cuts also get their cut sent to WP.
 // Only what happened before the order's first recorded review row is taken,
 // so nothing shows twice. Every row has a fixed key: a second run adds nothing.
 //
@@ -10,7 +12,8 @@
 //   tsx --conditions=react-server --env-file=.env scripts/backfill-commission-history.mts
 import { prisma } from "@/lib/db/prisma";
 import { recordCommissionEvent, type CommissionEventInput } from "@/lib/orders/commission-history";
-import { getWooOrderNotes } from "@/lib/woo/orders";
+import { getWooOrderNotes, updateWooOrder } from "@/lib/woo/orders";
+import { CUTS_META_KEY } from "@/lib/orders/commission-review";
 
 const dry = process.argv.includes("--dry");
 const ROLES = [
@@ -33,6 +36,7 @@ for (const o of orders) {
   const existing = await prisma.commissionEvent.findMany({ where: { orderId: o.id }, select: { key: true, userRole: true, createdAt: true } });
   const txs = await prisma.walletTransaction.findMany({ where: { orderId: o.id }, orderBy: { createdAt: "asc" } });
   const refunds = await prisma.commissionRefund.findMany({ where: { orderId: o.id }, orderBy: { createdAt: "asc" } });
+  const orderRefunds = await prisma.orderRefund.findMany({ where: { orderId: o.id }, orderBy: { refundNumber: "asc" } });
   const rows: CommissionEventInput[] = [];
 
   for (const r of ROLES) {
@@ -74,6 +78,23 @@ for (const o of orders) {
       }
     }
 
+    // Order refunds: the commission each one cut (same key as recorded live)
+    let cutSoFar = 0;
+    for (const f of orderRefunds) {
+      const cut = r.role === "PHYSICIAN" ? f.physicianClawback : f.salesRepClawback;
+      if (!(cut > 0)) continue;
+      const before = Number(Math.max(0, o[r.amount] - cutSoFar).toFixed(2));
+      cutSoFar += cut;
+      const tx = txs.find((t) => t.userRole === r.role && t.type === "DEBIT" && new RegExp(`refund #${f.refundNumber} on order`).test(t.description ?? ""));
+      const full = (f.items as unknown[] | null) === null || o.status === "REFUNDED" && f === orderRefunds[orderRefunds.length - 1] && before - cut <= 0.004;
+      rows.push({
+        key: `order-refund:${f.id}:${r.role}`, orderId: o.id, userRole: r.role, action: "ORDER_REFUND",
+        amount: Number(Math.max(0, before - cut).toFixed(2)), previousAmount: before, walletChange: tx ? -tx.amount : null,
+        note: `Refund #${f.refundNumber}: ${full ? "order fully refunded" : `$${f.total.toFixed(2)} of $${o.subtotal.toFixed(2)} refunded`}${f.reason ? ` (${f.reason})` : ""}`,
+        createdAt: f.processedAt,
+      });
+    }
+
     let left = o[r.amount];
     for (const f of refunds.filter((f) => f.userRole === r.role)) {
       rows.push({ key: `refund:${f.key}`, orderId: o.id, userRole: r.role, action: "REFUNDED", amount: Number((left - f.amount).toFixed(2)), previousAmount: left, walletChange: -f.amount, note: f.note, by: f.by, createdAt: f.createdAt });
@@ -84,6 +105,16 @@ for (const o of orders) {
     if (paidOutAt && !existing.some((e) => e.key.startsWith(`paid-out:${o.id}:${r.role}:`))) {
       rows.push({ key: `paid-out:${o.id}:${r.role}:backfill`, orderId: o.id, userRole: r.role, action: "PAID_OUT", amount: o[r.amount], createdAt: paidOutAt });
     }
+  }
+
+  // The WP Commissions box shows what order refunds cut
+  const cuts = {
+    physician: Number(orderRefunds.reduce((t, f) => t + f.physicianClawback, 0).toFixed(2)),
+    sales_rep: Number(orderRefunds.reduce((t, f) => t + f.salesRepClawback, 0).toFixed(2)),
+  };
+  if (o.wooOrderId && (cuts.physician > 0 || cuts.sales_rep > 0)) {
+    console.log(`${o.orderNumber}: WP cut ${JSON.stringify(cuts)}`);
+    if (!dry) await updateWooOrder(o.wooOrderId, { meta_data: [{ key: CUTS_META_KEY, value: JSON.stringify(cuts) }] }).catch((e) => console.error(e));
   }
 
   const fresh = rows.filter((x) => !existing.some((e) => e.key === x.key));
