@@ -231,29 +231,6 @@ export default async function AdminDashboardPage({
         {/* ── RIGHT: activity sidebar ── */}
         <div className="space-y-5">
 
-          {/* Pending withdrawal alert */}
-          {kpis.pendingWithdrawals > 0 && (
-            <Link
-              href="/admin/withdrawals"
-              className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl px-4 py-4 hover:bg-red-100 transition-colors group"
-            >
-              <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
-                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.834-2.194-.834-2.964 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-red-700">
-                  {kpis.pendingWithdrawals} withdrawal{kpis.pendingWithdrawals > 1 ? "s" : ""} pending
-                </p>
-                <p className="text-xs text-red-500 mt-0.5">Tap to review and process</p>
-              </div>
-              <svg className="w-4 h-4 text-red-300 group-hover:text-red-500 transition-colors shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          )}
-
           {/* Activity feed */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
