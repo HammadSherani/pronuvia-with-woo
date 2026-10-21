@@ -352,7 +352,7 @@ export default async function CommissionPayoutPage() {
     },
   });
   for (const o of adminRejected) {
-    const notes = (o.commissionReviewNotes ?? {}) as Record<string, { note?: string | null; at?: string | null }>;
+    const notes = (o.commissionReviewNotes ?? {}) as Record<string, { note?: string | null; at?: string | null; by?: string | null }>;
     for (const [userId, review, amount, rate, key, map, seen] of [
       [o.salesRepId, o.salesRepCommissionReview, o.salesRepCommissionAmount, o.salesRepCommissionRate, "salesRep", repRejectedMap, seenRejectedRepOrders],
       [o.physicianId, o.physicianCommissionReview, o.physicianCommissionAmount, o.physicianCommissionRate, "physician", docRejectedMap, seenRejectedDocOrders],
@@ -366,7 +366,8 @@ export default async function CommissionPayoutPage() {
         amount,
         rate:        rate ?? 0,
         refundedAt:  (notes[key]?.at ? new Date(notes[key].at!) : o.createdAt).toISOString(),
-        reason:      `Rejected by admin${notes[key]?.note ? `: ${notes[key].note}` : ""}`,
+        // Pronuvia itself rejects it when the order is cancelled
+        reason:      notes[key]?.by === "Pronuvia" ? (notes[key]?.note ?? "Rejected") : `Rejected by admin${notes[key]?.note ? `: ${notes[key].note}` : ""}`,
       });
       map.set(userId, arr);
     }

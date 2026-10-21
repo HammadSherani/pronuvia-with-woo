@@ -11,6 +11,7 @@ import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./
 import { importWooRefunds } from "./refunds";
 import { applyCommissionReview, REVIEW_META_KEY, reviewManaged } from "./commission-review";
 import { creditReviewedOrder } from "@/lib/withdrawals/credit-order";
+import { rejectAwaitingCommission } from "./commission-cancel";
 import { applyCommissionRefunds } from "@/lib/withdrawals/commission-refund";
 import { wooFetch } from "@/lib/woo/client";
 
@@ -149,6 +150,9 @@ export async function applyStatusLocally(orderId: string, status: OrderStatus): 
       }),
     },
   });
+
+  // A cancelled order's commission still awaiting review is rejected
+  if (status === OrderStatus.CANCELLED && order.status !== OrderStatus.CANCELLED) await rejectAwaitingCommission(orderId);
 }
 
 // ── reads ──
