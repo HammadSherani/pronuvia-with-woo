@@ -269,6 +269,7 @@ export default async function PhysicianCommissionPage() {
         <p className="text-sm text-gray-500 mt-0.5">Commission earnings by order</p>
       </div>
 
+      {/* Summary boxes hidden for now
       <PhysicianWalletPanel
         totalPending={netPending}
         totalWithdrawn={totalWithdrawn}
@@ -279,6 +280,7 @@ export default async function PhysicianCommissionPage() {
         bankAccountNumber={physician?.bankAccountNumber}
         bankAccountName={physician?.bankAccountName}
       />
+      */}
 
       {/* Pending Commission */}
       <div className="mb-8">

@@ -269,6 +269,7 @@ export default async function SalesCommissionPage() {
         <p className="text-sm text-gray-500 mt-0.5">Commission earnings by order</p>
       </div>
 
+      {/* Summary boxes hidden for now
       <WalletPanel
         totalPending={netPending}
         totalWithdrawn={totalWithdrawn}
@@ -279,6 +280,7 @@ export default async function SalesCommissionPage() {
         bankAccountNumber={rep?.bankAccountNumber}
         bankAccountName={rep?.bankAccountName}
       />
+      */}
 
       {/* Pending Commission */}
       <div className="mb-8">
