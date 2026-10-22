@@ -432,6 +432,17 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                       <p className="text-gray-500 text-xs leading-relaxed whitespace-pre-line">
                         {fmtAddressBody(order.billingAddress)}
                       </p>
+                      {/* Under Billing, as in WP admin (the billing email is the patient's) */}
+                      {order.customerEmail && (
+                        <div>
+                          <p className="text-[11px] text-gray-400 mb-0.5">
+                            Patient&apos;s Email address:
+                          </p>
+                          <a href={`mailto:${order.customerEmail}`} className="text-xs text-[#3DBFA4] hover:underline break-all">
+                            {order.customerEmail}
+                          </a>
+                        </div>
+                      )}
                       {(parseAddrPhone(order.billingAddress) || customerPhone) && (
                         <div>
                           <p className="text-[11px] text-gray-400 mb-0.5">Phone:</p>
@@ -484,16 +495,6 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                       <p className="text-gray-500 text-xs leading-relaxed whitespace-pre-line">
                         {fmtAddressBody(order.shippingAddress)}
                       </p>
-                      {order.customerEmail && (
-                        <div>
-                          <p className="text-[11px] text-gray-400 mb-0.5">
-                            Patient Email:
-                          </p>
-                          <a href={`mailto:${order.customerEmail}`} className="text-xs text-[#3DBFA4] hover:underline break-all">
-                            {order.customerEmail}
-                          </a>
-                        </div>
-                      )}
                       {(parseAddrPhone(order.shippingAddress) || customerPhone) && (
                         <div>
                           <p className="text-[11px] text-gray-400 mb-0.5">Phone:</p>
