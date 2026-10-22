@@ -151,8 +151,9 @@ export async function applyStatusLocally(orderId: string, status: OrderStatus): 
     },
   });
 
-  // A cancelled order's commission still awaiting review is rejected
-  if (status === OrderStatus.CANCELLED && order.status !== OrderStatus.CANCELLED) await rejectAwaitingCommission(orderId);
+  // A cancelled / refunded order's commission still awaiting review is rejected
+  if (status === OrderStatus.CANCELLED && order.status !== OrderStatus.CANCELLED) await rejectAwaitingCommission(orderId, "cancelled");
+  if (status === OrderStatus.REFUNDED && order.status !== OrderStatus.REFUNDED) await rejectAwaitingCommission(orderId, "refunded");
 }
 
 // ── reads ──

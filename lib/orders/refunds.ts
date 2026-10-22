@@ -11,6 +11,7 @@ import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
 import { getWooRefund, REFUND_ID_KEY, updateWooOrder, type WooOrderDetail } from "@/lib/woo/orders";
 import { commissionNet, CUTS_META_KEY, reviewManaged } from "./commission-review";
 import { recordCommissionEvent } from "./commission-history";
+import { rejectAwaitingCommission } from "./commission-cancel";
 
 // Refunds are made in WP admin only. Each Woo refund is picked up when the
 // order is brought up to date (webhook, cron, opening it) and recorded here
@@ -214,6 +215,9 @@ async function record(order: RefundOrder, p: Plan, opts: {
     await updateWooOrder(order.wooOrderId, { meta_data: [{ key: CUTS_META_KEY, value: JSON.stringify(cuts) }] })
       .catch((e) => console.error(`[refunds] order ${order.orderNumber}: commission cut not sent to WooCommerce:`, e));
   }
+
+  // Fully refunded: commission still awaiting review is rejected too
+  if (p.isFull) await rejectAwaitingCommission(order.id, "refunded");
 
   await refundEmail(order, p, opts.amount, opts.reason);
   return { id: refund.id, salesRepClawback, physicianClawback };

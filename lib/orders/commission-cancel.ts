@@ -10,15 +10,14 @@ const ROLES = [
   { key: "sales_rep", role: "SALES_REP", review: "salesRepCommissionReview", amount: "salesRepCommissionAmount", note: "salesRep" },
 ] as const;
 
-const NOTE = "Order cancelled";
-
 /**
- * The order was cancelled: its commission still awaiting review is rejected
- * ("Order cancelled", by Pronuvia), here, in the Commission History, and on the
- * WP order (so its Commissions box says rejected). Commission already reviewed
- * stays as it is.
+ * The order was cancelled or fully refunded: its commission still awaiting
+ * review is rejected ("Order cancelled" / "Order refunded", by Pronuvia), here,
+ * in the Commission History, and on the WP order (so its Commissions box says
+ * rejected). Commission already reviewed stays as it is.
  */
-export async function rejectAwaitingCommission(orderId: string): Promise<void> {
+export async function rejectAwaitingCommission(orderId: string, why: "cancelled" | "refunded" = "cancelled"): Promise<void> {
+  const NOTE = why === "refunded" ? "Order refunded" : "Order cancelled";
   const order = await prisma.order.findUniqueOrThrow({
     where:  { id: orderId },
     select: {
@@ -40,7 +39,7 @@ export async function rejectAwaitingCommission(orderId: string): Promise<void> {
     if (claimed.count !== 1) continue;
     rejected.push(r);
     notes[r.note] = { status: "rejected", amount: order[r.amount], note: NOTE, at: at.toISOString(), by: "Pronuvia" };
-    await recordCommissionEvent({ key: `cancel:${orderId}:${r.role}`, orderId, userRole: r.role, action: "REJECTED", amount: order[r.amount], note: NOTE, by: "Pronuvia", createdAt: at });
+    await recordCommissionEvent({ key: `${why === "refunded" ? "refund-reject" : "cancel"}:${orderId}:${r.role}`, orderId, userRole: r.role, action: "REJECTED", amount: order[r.amount], note: NOTE, by: "Pronuvia", createdAt: at });
   }
   if (!rejected.length) return;
   await prisma.order.update({ where: { id: orderId }, data: { commissionReviewNotes: notes as object } });
