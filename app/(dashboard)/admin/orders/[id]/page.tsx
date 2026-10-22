@@ -345,7 +345,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
                         <span className="ml-1 text-[11px] font-mono text-[#3DBFA4]"> · {order.transactionId}</span>
                       )}
                       {payStatus === "PAID" && (
-                        <span className="ml-1"> · Paid on {fmtDateTime(order.updatedAt)}</span>
+                        <span className="ml-1"> · Paid on {fmtDateTime(order.createdAt)}</span>
                       )}
                     </p>
                     {order.wooOrderId ? (

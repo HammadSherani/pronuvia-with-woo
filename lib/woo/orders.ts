@@ -21,7 +21,7 @@ export type WooOrderLine = {
 export type NewWooOrder = {
   orderNumber:     string;
   customerId:      number | null;
-  billing:         WooOrderAddress;
+  billing:         WooOrderAddress & { email?: string };
   shipping:        WooOrderAddress;
   lines:           WooOrderLine[];
   shipping_line:   { rateId: string | null; title: string; cost: number };
@@ -57,8 +57,10 @@ function body(o: NewWooOrder, withCoupon: boolean) {
     payment_method:       o.payment.method,
     payment_method_title: o.payment.title,
     transaction_id:       o.payment.transactionId,
-    // Woo fills the billing email from the customer account. The patient's
-    // email is in the order meta; order emails are sent by Next.js.
+    // The billing email is the patient's (WP shows it as "Patient's Email
+    // address"); without one Woo fills it from the customer account. The
+    // patient's email is also in the order meta. Order emails are sent by
+    // Next.js (Woo's customer emails are off).
     billing:              o.billing,
     shipping:             o.shipping,
     customer_note:        o.note ?? "",

@@ -176,6 +176,7 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
     select: {
       id: true, status: true, wooOrderId: true, shippingAddress: true, billingAddress: true,
       customerEmail: true, customerPhone: true, updatedAt: true,
+      physician: { select: { email: true } }, salesRep: { select: { email: true } },
     },
   });
   if (!order?.wooOrderId) return;
@@ -212,7 +213,19 @@ async function refresh(where: { id: string } | { orderNumber: string }): Promise
     }
   }
 
-  const email = metaValue(w, META.customerEmail);
+  // The patient's email: WP admin shows and edits it as the billing email.
+  // A billing email that differs from ours and is not the rep's / doctor's
+  // account email (what Woo fills in when there is no patient email) was
+  // changed in WP: it wins, and the meta follows.
+  const metaEmail    = metaValue(w, META.customerEmail);
+  const billingEmail = (w.billing?.email ?? "").trim().toLowerCase();
+  const accountEmails = [order.physician?.email, order.salesRep?.email].filter(Boolean).map((e) => e!.toLowerCase());
+  const editedInWp   = !!billingEmail && billingEmail !== (typeof metaEmail === "string" ? metaEmail.toLowerCase() : "") && !accountEmails.includes(billingEmail);
+  const email = editedInWp ? billingEmail : metaEmail;
+  if (editedInWp) {
+    await updateWooOrder(order.wooOrderId, { meta_data: [{ key: META.customerEmail, value: billingEmail }] })
+      .catch((e) => console.error(`[order-woo] patient email not saved on Woo order #${order.wooOrderId}:`, e));
+  }
   const phone = metaValue(w, META.customerPhone);
   const data = {
     ...(!sameAddress(order.shippingAddress, w.shipping) && { shippingAddress: JSON.stringify(fromWooAddress(w.shipping)) }),

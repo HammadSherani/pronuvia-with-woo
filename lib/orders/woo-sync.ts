@@ -86,7 +86,7 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
       const send = (customer: number | null) => createWooOrder({
         orderNumber: order.orderNumber,
         customerId:  customer,
-        billing:     address(order.billingAddress) ?? shipping,
+        billing:     { ...(address(order.billingAddress) ?? shipping), ...(order.customerEmail && { email: order.customerEmail }) },
         shipping,
         lines: (order.items as unknown as OrderItem[]).map((i) => ({
           productId: i.productId, variationId: i.variationId ?? null, quantity: i.quantity, lineTotal: i.lineTotal,
