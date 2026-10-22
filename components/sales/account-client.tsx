@@ -9,7 +9,7 @@ import { formatDateLong } from "@/lib/utils/timezone";
 import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 type Rep = {
-  firstName: string; lastName: string; name: string; email: string;
+  firstName: string; lastName: string; name: string; email: string; loginId: string | null;
   phone: string | null; website: string | null;
   commission: number; walletBalance: number; ordersCount: number;
   billingAddress: string | null; shippingAddress: string | null;
@@ -139,6 +139,7 @@ function ViewMode({ r, onEdit }: { r: Rep; onEdit: () => void }) {
         <InfoRow label="First Name" value={r.firstName} />
         <InfoRow label="Last Name"  value={r.lastName} />
         <InfoRow label="Email"      value={r.email} />
+        <InfoRow label="Login ID"   value={r.loginId} />
         <InfoRow label="Phone"      value={r.phone} />
         <InfoRow label="Website"    value={r.website} />
       </Section>

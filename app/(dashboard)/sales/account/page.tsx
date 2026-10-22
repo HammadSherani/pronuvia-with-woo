@@ -10,7 +10,7 @@ export default async function SalesAccountPage() {
   const rep = await prisma.salesRepresentative.findUnique({
     where: { id: session.userId },
     select: {
-      firstName: true, lastName: true, name: true, email: true,
+      firstName: true, lastName: true, name: true, email: true, loginId: true,
       phone: true, website: true,
       commission: true, walletBalance: true, ordersCount: true,
       billingAddress: true, shippingAddress: true,

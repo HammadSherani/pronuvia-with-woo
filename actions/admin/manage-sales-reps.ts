@@ -104,6 +104,7 @@ export async function createSalesRep(
   const { subject, html } = passwordSetupEmail({
     firstName: data.firstName + " " +data.lastName,
     email:     data.email,
+    loginId:   data.loginId || null,
     resetToken: token,
     role:      "salesRep",
   });

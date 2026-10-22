@@ -76,6 +76,7 @@ const addrLabel = (text: string) =>
 export function passwordSetupEmail(opts: {
   firstName: string;
   email: string;
+  loginId?: string | null;
   resetToken: string;
   role: "salesRep" | "physician";
 }) {
@@ -92,8 +93,12 @@ export function passwordSetupEmail(opts: {
     </p>
 
     ${infoBox(`
+      ${opts.loginId ? `
+      <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:${C.dimmed};text-transform:uppercase;letter-spacing:0.06em;">Your Login ID</p>
+      <p style="margin:8px 0 14px;font-size:14px;font-weight:600;color:${C.text};">${opts.loginId}</p>` : ""}
       <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:${C.dimmed};text-transform:uppercase;letter-spacing:0.06em;">Your Login Email</p>
       <p style="margin:8px 0 0;font-size:14px;font-weight:600;color:${C.text};">${opts.email}</p>
+      <p style="margin:12px 0 0;font-size:12px;color:${C.muted};">You can sign in with either your Login ID or your email.</p>
     `)}
 
     ${btn(resetLink, "Set My Password")}
