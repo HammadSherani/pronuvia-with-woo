@@ -10,6 +10,7 @@ export function isWpAdminPath(p: string): boolean {
 const sso = (path: string) => `/api/woo/sso?to=${encodeURIComponent(`/wp-admin/${path}`)}`;
 
 export const wpAdmin = {
+  dashboard:   () => sso(""),
   products:    () => sso("edit.php?post_type=product"),
   newProduct:  () => sso("post-new.php?post_type=product"),
   editProduct: (wooId: string | number) => sso(`post.php?post=${wooId}&action=edit`),

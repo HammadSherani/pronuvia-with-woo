@@ -6,6 +6,7 @@ import { PronuviaLogoDark } from "./pronuvia-logo-dark";
 import { useCart } from "@/lib/cart/cart-context";
 import type { Role } from "@/generated/prisma/enums";
 import { logout } from "@/actions/auth/logout";
+import { wpAdmin } from "@/lib/woo/admin-links";
 
 function CartIcon({ href }: { href: string }) {
   const { totalItems } = useCart();
@@ -212,6 +213,20 @@ export function MainHeader({ role }: { role: Role }) {
             )
           )}
 
+          {/* WP admin, signed in through Pronuvia (SSO), in a new tab */}
+          {role === "ADMIN" && (
+            <a
+              href={wpAdmin.dashboard()}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white bg-[#3DBFA4] hover:bg-[#35a993] rounded-lg transition-colors whitespace-nowrap"
+            >
+              WordPress Admin
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14 5h5v5M19 5l-8 8M10 5H5v14h14v-5" />
+              </svg>
+            </a>
+          )}
           {role === "SALES_REP" && <CartIcon href="/sales/cart" />}
           {role === "PHYSICIAN" && <CartIcon href="/physician/cart" />}
         </nav>
