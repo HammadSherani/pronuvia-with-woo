@@ -3,6 +3,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
 import { WalletPanel } from "@/components/sales/wallet-panel";
 import { formatDate } from "@/lib/utils/timezone";
+import { getCurrentPeriod, periodFromKey } from "@/lib/withdrawals/monthly";
+import { MonthPicker } from "@/components/shared/month-picker";
 
 export const metadata = { title: "Commission – Pronuvia" };
 
@@ -176,7 +178,7 @@ function AdjustmentTable({ adjustments }: { adjustments: AdjustmentRow[] }) {
   );
 }
 
-export default async function SalesCommissionPage() {
+export default async function SalesCommissionPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const session = await requireSalesRep();
 
   const [rep, earningOrders, withdrawRequests, adjustments] = await Promise.all([
@@ -206,6 +208,8 @@ export default async function SalesCommissionPage() {
         salesRepCommissionReview: true,
         salesRepCommissionOriginal: true,
         commissionReviewNotes: true,
+        commissionCreditedAt: true,
+        returnedAt: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -262,11 +266,60 @@ export default async function SalesCommissionPage() {
   const deficit    = Math.max(0, -(rep?.walletBalance ?? 0));
   const netPending = totalPending - deficit;
 
+  // ── One month at a time (?month=YYYY-MM, default this month) ──
+  // Pending stays until the admin acts on it: this month shows every
+  // pending commission, an older month its own still pending ones.
+  // Approved shows in the month it went into the wallet, rejected in the
+  // month it was rejected / cut, adjustments in their month.
+  const tz      = process.env.PAYOUT_TIMEZONE ?? "UTC";
+  const current = getCurrentPeriod(new Date(), tz);
+  const { month } = await searchParams;
+  let period = current;
+  if (month) { try { period = periodFromKey(month); } catch { /* this month */ } }
+  if (period.start > current.start) period = current;
+  const isCurrent = period.key === current.key;
+  const inMonth   = (d: Date) => d >= period.start && d < period.end;
+
+  const cutEvents = rejectedRows.length
+    ? await prisma.commissionEvent.findMany({
+        where:   { orderId: { in: rejectedRows.map((r) => r.o.id) }, userRole: "SALES_REP", action: { in: ["REJECTED", "ORDER_REFUND", "REFUNDED"] } },
+        orderBy: { createdAt: "desc" },
+        select:  { orderId: true, createdAt: true },
+      })
+    : [];
+  const lastCut = new Map<string, Date>();
+  for (const e of cutEvents) if (!lastCut.has(e.orderId)) lastCut.set(e.orderId, e.createdAt);
+  const rejectedAt = (o: (typeof earningOrders)[number]) => {
+    const at = (o.commissionReviewNotes as Record<string, { at?: string | null }> | null)?.["salesRep"]?.at;
+    return lastCut.get(o.id) ?? (at && !Number.isNaN(Date.parse(at)) ? new Date(at) : null) ?? o.returnedAt ?? o.createdAt;
+  };
+
+  const monthPending     = pendingOrders.filter((o) => isCurrent || inMonth(o.createdAt));
+  const monthApproved    = paidOrders.filter((o) => inMonth(o.commissionCreditedAt ?? o.createdAt));
+  const monthRejected    = rejectedRows.filter((r) => inMonth(rejectedAt(r.o)));
+  const monthAdjustments = adjustments.filter((a) => inMonth(a.createdAt));
+  const monthPendingTotal  = monthPending.reduce((s, o) => s + netOf(o), 0);
+  const monthApprovedTotal = monthApproved.reduce((s, o) => s + netOf(o), 0);
+
+  // Months from the first order (or adjustment) to now, newest first
+  const first = [...earningOrders.map((o) => o.createdAt), ...adjustments.map((a) => a.createdAt)]
+    .reduce<Date>((min, d) => (d < min ? d : min), current.start);
+  const months: { key: string; label: string }[] = [];
+  for (let y = current.start.getUTCFullYear(), m = current.start.getUTCMonth(); ; m--) {
+    if (m < 0) { m = 11; y--; }
+    const p = periodFromKey(`${y}-${String(m + 1).padStart(2, "0")}`);
+    months.push({ key: p.key, label: p.label });
+    if (p.start <= first || months.length >= 120) break;
+  }
+
   return (
     <div className="max-w-6xl">
-      <div className="mb-7">
-        <h1 className="text-xl font-bold text-gray-800">Commission</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Commission earnings by order</p>
+      <div className="mb-7 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">Commission</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Commission for {period.label}</p>
+        </div>
+        <MonthPicker months={months} value={period.key} />
       </div>
 
       {/* Summary boxes hidden for now
@@ -287,18 +340,21 @@ export default async function SalesCommissionPage() {
         <div className="flex items-center gap-3 mb-3">
           <h2 className="text-sm font-bold text-gray-700">Pending Commission</h2>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            {pendingOrders.length}
+            {monthPending.length}
           </span>
-          {pendingOrders.length > 0 && (
+          <span className="text-[11px] text-gray-400">
+            {isCurrent ? "all commission still awaiting review" : `${period.label} orders still awaiting review`}
+          </span>
+          {monthPending.length > 0 && (
             <span className="text-xs text-amber-600 font-medium ml-auto">
-              {fmt(totalPending)} pending
+              {fmt(monthPendingTotal)} pending
             </span>
           )}
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {pendingOrders.length === 0
+          {monthPending.length === 0
             ? <EmptySection message="No pending commissions" />
-            : <CommissionTable orders={pendingOrders} />
+            : <CommissionTable orders={monthPending} />
           }
         </div>
       </div>
@@ -306,20 +362,20 @@ export default async function SalesCommissionPage() {
       {/* Approved Commission (in the wallet, paid out from Commission Payout) */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-sm font-bold text-gray-700">Approved Commission</h2>
+          <h2 className="text-sm font-bold text-gray-700">Approved Commission — {period.label}</h2>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            {paidOrders.length}
+            {monthApproved.length}
           </span>
-          {paidOrders.length > 0 && (
+          {monthApproved.length > 0 && (
             <span className="text-xs text-emerald-600 font-medium ml-auto">
-              {fmt(totalPaid)} in your wallet / paid out
+              {fmt(monthApprovedTotal)} approved this month
             </span>
           )}
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {paidOrders.length === 0
-            ? <EmptySection message="No approved commissions yet" />
-            : <CommissionTable orders={paidOrders} />
+          {monthApproved.length === 0
+            ? <EmptySection message={`No commission approved in ${period.label}`} />
+            : <CommissionTable orders={monthApproved} />
           }
         </div>
       </div>
@@ -327,14 +383,14 @@ export default async function SalesCommissionPage() {
       {/* Rejected Commission */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-sm font-bold text-gray-700">Rejected Commission</h2>
+          <h2 className="text-sm font-bold text-gray-700">Rejected Commission — {period.label}</h2>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-            {rejectedRows.length}
+            {monthRejected.length}
           </span>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {rejectedRows.length === 0
-            ? <EmptySection message="No rejected commissions" />
+          {monthRejected.length === 0
+            ? <EmptySection message={`No commission rejected in ${period.label}`} />
             : (
               <table className="w-full text-sm table-fixed">
                 <colgroup>
@@ -354,10 +410,10 @@ export default async function SalesCommissionPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {rejectedRows.map(({ o, amount, adminRefund }) => (
+                  {monthRejected.map(({ o, amount, adminRefund }) => (
                     <tr key={`${o.id}-${adminRefund}`} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-5 py-4 text-xs text-gray-400 whitespace-nowrap">
-                        {formatDate(o.createdAt)}
+                        {formatDate(rejectedAt(o))}
                       </td>
                       <td className="px-5 py-4">
                         <span className="font-mono text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-1 rounded-lg line-through">
@@ -401,15 +457,15 @@ export default async function SalesCommissionPage() {
       {/* Admin Wallet Adjustments */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-3">
-          <h2 className="text-sm font-bold text-gray-700">Admin Wallet Adjustments</h2>
+          <h2 className="text-sm font-bold text-gray-700">Admin Wallet Adjustments — {period.label}</h2>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 border border-gray-200">
-            {adjustments.length}
+            {monthAdjustments.length}
           </span>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {adjustments.length === 0
-            ? <EmptySection message="No admin adjustments" />
-            : <AdjustmentTable adjustments={adjustments} />
+          {monthAdjustments.length === 0
+            ? <EmptySection message={`No admin adjustments in ${period.label}`} />
+            : <AdjustmentTable adjustments={monthAdjustments} />
           }
         </div>
       </div>
