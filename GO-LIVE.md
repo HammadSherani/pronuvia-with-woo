@@ -27,6 +27,7 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 - [ ] REST API key (WooCommerce → Settings → Advanced → REST API): Read/Write, ek admin user ke naam
 - [ ] HPOS ON (order links `admin.php?page=wc-orders&action=edit&id=` isi par chalte hain)
 - [ ] Purana "product update" webhook (khaali delivery URL) hata dein
+- [ ] **Pronuvia Shipped Status plugin** (WooCommerce mein "Shipped" status; Pronuvia ka Shipped ab WP mein bhi Shipped): **code deploy se pehle** Plugins → Upload `wordpress/pronuvia-shipped-status.zip` → Activate. Phir deploy, phir purane orders: `tsx --conditions=react-server --env-file=.env scripts/woo-shipped-status.mts --dry`, phir bina `--dry`
 - [ ] **Pronuvia Order Number plugin** (WP par order number Pronuvia wala, e.g. 13045, Woo ID 570 ki jagah; Orders search mein bhi): Plugins → Add New → Upload `wordpress/pronuvia-order-number.zip` → Activate. Order ID (URL ka `id=570`) nahi badalta
 - [ ] **Pronuvia Commissions plugin** (order page par doctor / rep commission Approve / Reject / Modify): Plugins → Add New → Upload `wordpress/pronuvia-commissions.zip` → Activate. Faisla order webhook se Pronuvia mein aata hai; sirf approved commission payout mein jati hai
   - **1.2.0**: commission Commission Payout mein payout approve hone tak WP par badli ja sakti hai (Approve / Reject / Modify jitni dafa, wallet farq ke saath). Payout approve → wo row lock, sirf Refund commission

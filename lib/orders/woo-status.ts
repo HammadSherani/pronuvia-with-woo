@@ -1,16 +1,17 @@
 import type { OrderStatus } from "@/generated/prisma/enums";
 
 // Our order statuses in WooCommerce. Every order here is paid, so a new order
-// (PENDING) is Woo "processing" (Woo's "pending" means unpaid). Woo has no
-// "shipped" status without a plugin; like most stores we use "completed" for
-// shipped/delivered. Our exact status rides along in meta `pronuvia_status`.
+// (PENDING) is Woo "processing" (Woo's "pending" means unpaid). Shipped is
+// Woo "shipped", a status added by the Pronuvia Shipped Status plugin
+// (wordpress/pronuvia-shipped-status); delivered / completed are "completed".
+// Our exact status rides along in meta `pronuvia_status`.
 
 export const STATUS_META_KEY = "pronuvia_status";
 
 const TO_WOO: Record<OrderStatus, string> = {
   PENDING:    "processing",
   PROCESSING: "processing",
-  SHIPPED:    "completed",
+  SHIPPED:    "shipped",
   DELIVERED:  "completed",
   COMPLETED:  "completed",
   CANCELLED:  "cancelled",
@@ -30,6 +31,7 @@ export function fromWooStatus(wooStatus: string, metaStatus: unknown): OrderStat
     return metaStatus as OrderStatus;
   }
   switch (wooStatus) {
+    case "shipped":   return "SHIPPED";
     case "completed": return "COMPLETED";
     case "cancelled":
     case "failed":    return "CANCELLED";
