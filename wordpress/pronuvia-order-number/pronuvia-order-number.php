@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Pronuvia Order Number
- * Description: Shows the Pronuvia order number (e.g. 13045) on WooCommerce orders instead of the WooCommerce order ID, and finds orders by it in the Orders search.
- * Version:     1.0.0
+ * Description: Shows the Pronuvia order number (e.g. 13045) on WooCommerce orders instead of the WooCommerce order ID, finds orders by it in the Orders search, and names the doctor / sales rep of each order in the Orders list (as Pronuvia does).
+ * Version:     1.1.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -33,4 +33,19 @@ function pronuvia_order_number_search_keys( $keys ) {
 	$keys   = is_array( $keys ) ? $keys : array();
 	$keys[] = PRONUVIA_ORDER_NUMBER_KEY;
 	return array_values( array_unique( $keys ) );
+}
+
+// Orders list: next to the number, the doctor of the order, else the sales
+// rep (the same name the Pronuvia orders list shows), instead of the billing name
+add_filter( 'woocommerce_admin_order_buyer_name', 'pronuvia_order_buyer_name', 10, 2 );
+function pronuvia_order_buyer_name( $buyer, $order ) {
+	if ( ! is_object( $order ) || ! method_exists( $order, 'get_meta' ) ) {
+		return $buyer;
+	}
+	$doctor = trim( (string) $order->get_meta( 'pronuvia_physician_name' ) );
+	if ( '' !== $doctor ) {
+		return preg_replace( '/^Dr\.?\s+/i', '', $doctor );
+	}
+	$rep = trim( (string) $order->get_meta( 'pronuvia_sales_rep_name' ) );
+	return '' !== $rep ? $rep : $buyer;
 }
