@@ -300,6 +300,7 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
   const monthAdjustments = adjustments.filter((a) => inMonth(a.createdAt));
   const monthPendingTotal  = monthPending.reduce((s, o) => s + netOf(o), 0);
   const monthApprovedTotal = monthApproved.reduce((s, o) => s + netOf(o), 0);
+  const monthRejectedTotal = monthRejected.reduce((s, r) => s + r.amount, 0);
 
   // Months from the first order (or adjustment) to now, newest first
   const first = [...earningOrders.map((o) => o.createdAt), ...adjustments.map((a) => a.createdAt)]
@@ -387,6 +388,11 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
             {monthRejected.length}
           </span>
+          {monthRejected.length > 0 && (
+            <span className="text-xs text-red-500 font-medium ml-auto">
+              {fmt(monthRejectedTotal)} rejected this month
+            </span>
+          )}
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           {monthRejected.length === 0
@@ -448,6 +454,15 @@ export default async function SalesCommissionPage({ searchParams }: { searchPara
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t border-gray-100 bg-gray-50/60">
+                    <td colSpan={3} className="px-5 py-3 text-xs font-bold text-gray-500 text-right">Total</td>
+                    <td className="px-5 py-3 text-right">
+                      <span className="text-sm font-black text-red-500">{fmt(monthRejectedTotal)}</span>
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
               </table>
             )
           }
