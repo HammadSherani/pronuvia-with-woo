@@ -31,7 +31,7 @@ export default async function SalesPhysiciansPage({
       select: {
         id: true, firstName: true, lastName: true, email: true,
         phone: true, nameOfPractice: true, credential: true, city: true, state: true,
-        commission: true, isApproved: true, createdAt: true,
+        uplineCommission: true, isApproved: true, createdAt: true,
         fieldsOfSpeciality: true,
       },
       orderBy: { createdAt: "desc" },
@@ -119,7 +119,7 @@ export default async function SalesPhysiciansPage({
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Location</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Speciality</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Commission</th>
+                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Your Commission</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Added</th>
                 </tr>
@@ -175,7 +175,8 @@ export default async function SalesPhysiciansPage({
                       </td>
                       <td className="px-5 py-4">
                         <span className="inline-flex px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
-                          {p.commission}%
+                          {/* the rep's own commission on this doctor's orders */}
+                          {p.uplineCommission}%
                         </span>
                       </td>
                       <td className="px-5 py-4">
