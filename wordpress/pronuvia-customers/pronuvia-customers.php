@@ -1,15 +1,16 @@
 <?php
 /**
  * Plugin Name: Pronuvia Customer Accounts
- * Description: Gives each Pronuvia rep / doctor customer account the role "Sales Rep" or "Doctor", and keeps its username equal to their Pronuvia Login ID.
+ * Description: Gives each Pronuvia rep / doctor customer account the site's sales rep / doctor role (mlm_sales_rep / doctor), and keeps its username equal to their Pronuvia Login ID.
  * Version:     1.0.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
  * Pronuvia creates a WooCommerce customer account for each sales rep and
  * doctor (so their orders belong to them) and writes two meta on it:
- *   - `pronuvia_role` (SALES_REP / PHYSICIAN): the account gets the role
- *     "Sales Rep" / "Doctor" (same permissions as Customer) instead of Customer;
+ *   - `pronuvia_role` (SALES_REP / PHYSICIAN): the account gets the site's
+ *     existing role `mlm_sales_rep` / `doctor` instead of Customer (they are
+ *     created, with Customer permissions, only if missing);
  *   - `pronuvia_login_id`: WordPress can't change a username, so this plugin
  *     renames the account to the Login ID.
  * Only Pronuvia customer accounts are touched, never an account that can
@@ -19,12 +20,13 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// The site's existing roles (from its earlier setup); label used only if missing
 const PRONUVIA_CUSTOMER_ROLES = array(
-	'SALES_REP' => array( 'pronuvia_sales_rep', 'Sales Rep' ),
-	'PHYSICIAN' => array( 'pronuvia_doctor', 'Doctor' ),
+	'SALES_REP' => array( 'mlm_sales_rep', 'Sales Rep' ),
+	'PHYSICIAN' => array( 'doctor', 'Doctor' ),
 );
 
-// The roles: what a Customer can do, under their own name
+// Only if a role is missing: create it with what a Customer can do
 add_action( 'init', 'pronuvia_customer_roles_register' );
 function pronuvia_customer_roles_register() {
 	$customer = get_role( 'customer' );
