@@ -3,7 +3,6 @@ import { getCurrentSession } from "@/lib/auth/dal";
 import { prisma }            from "@/lib/db/prisma";
 import { MainHeader }        from "@/components/dashboard/main-header";
 import { SubHeader }         from "@/components/dashboard/sub-header";
-import { ToastProvider }     from "@/components/toast-provider";
 import { CartProviderWrapper } from "@/components/cart-provider-wrapper";
 import { BankNotifyGate }    from "@/components/dashboard/bank-notify-gate";
 import { HideStripeBadge }   from "@/components/shared/hide-stripe-badge";
@@ -40,7 +39,6 @@ export default async function DashboardLayout({
   return (
     <CartProviderWrapper userId={session.userId}>
       <div className="min-h-screen flex flex-col bg-[#f9fafb]">
-        <ToastProvider />
         <HideStripeBadge />
         <MainHeader role={session.role} />
         <SubHeader role={session.role} />

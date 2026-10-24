@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
 import { Suspense } from "react";
 import { NavigationProgress } from "@/components/navigation-progress";
+import { ToastProvider } from "@/components/toast-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,6 +41,8 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <NavigationProgress />
         </Suspense>
+        {/* Every page, so website forms (registration, contact) can show toasts too */}
+        <ToastProvider />
         {children}
       </body>
     </html>
