@@ -41,6 +41,7 @@ type UserProfile = {
   phone:         string;
   billing:       NormalizedAddress | null;
   shipping:      NormalizedAddress | null;
+  loginId:       string | null;
   wooCustomerId: number | null;
   eligible:      boolean;
   skipReason?:   string;
@@ -50,6 +51,18 @@ type UserProfile = {
 // meta from the REST API, so it could never be read back.
 const META_ROLE  = "pronuvia_role";
 const META_OWNER = "pronuvia_user_id";
+// The WP username follows it (plugin wordpress/pronuvia-usernames renames the user)
+const META_LOGIN = "pronuvia_login_id";
+
+/**
+ * The WordPress username for a Login ID: what WP's sanitize_user() keeps
+ * (letters, digits, space . _ - @), lowercase. Null when nothing usable is left.
+ */
+export function wpUsername(loginId: string | null | undefined): string | null {
+  const v = (loginId ?? "").trim().toLowerCase().replace(/[^a-z0-9 _.@-]/g, "");
+  return v.length >= 3 ? v : null;
+}
+const fallbackUsername = (role: CustomerRole, id: string) => `pronuvia-${role.toLowerCase().replace("_", "-")}-${id}`;
 
 // ── Load the Pronuvia user ────────────────────────────────────────────────────
 
@@ -58,7 +71,7 @@ async function loadProfile(role: CustomerRole, id: string): Promise<UserProfile 
     const r = await prisma.salesRepresentative.findUnique({
       where:  { id },
       select: {
-        id: true, email: true, firstName: true, lastName: true, phone: true,
+        id: true, email: true, firstName: true, lastName: true, phone: true, loginId: true,
         billingAddress: true, shippingAddress: true, wooCustomerId: true,
       },
     });
@@ -67,6 +80,7 @@ async function loadProfile(role: CustomerRole, id: string): Promise<UserProfile 
     const shipping = normalizeAddressString(r.shippingAddress);
     return {
       role, id: r.id, email: r.email, firstName: r.firstName, lastName: r.lastName, phone: r.phone ?? "",
+      loginId: r.loginId ?? null,
       billing:  isEmptyAddress(billing)  ? (isEmptyAddress(shipping) ? null : shipping) : billing,
       shipping: isEmptyAddress(shipping) ? (isEmptyAddress(billing)  ? null : billing)  : shipping,
       wooCustomerId: r.wooCustomerId ?? null,
@@ -79,13 +93,14 @@ async function loadProfile(role: CustomerRole, id: string): Promise<UserProfile 
     select: {
       id: true, email: true, firstName: true, lastName: true, phone: true, isApproved: true,
       addressOne: true, addressTwo: true, city: true, state: true, zipCode: true, country: true,
-      nameOfPractice: true, wooCustomerId: true,
+      nameOfPractice: true, wooCustomerId: true, loginId: true,
     },
   });
   if (!p) return null;
   const address = normalizePhysicianAddress(p);
   return {
     role, id: p.id, email: p.email, firstName: p.firstName, lastName: p.lastName, phone: p.phone ?? "",
+    loginId: p.loginId ?? null,
     billing: address, shipping: address,
     wooCustomerId: p.wooCustomerId ?? null,
     eligible:   p.isApproved === ApprovalStatus.APPROVED,
@@ -129,11 +144,27 @@ function customerBody(u: UserProfile) {
     meta_data:  [
       { key: META_ROLE,  value: u.role },
       { key: META_OWNER, value: u.id },
+      { key: META_LOGIN, value: wpUsername(u.loginId) ?? "" },
     ],
   };
 }
 
 const ownerOf = (c: WooCustomer) => c.meta_data.find((m) => m.key === META_OWNER)?.value as string | undefined;
+
+/**
+ * The Pronuvia user a customer belongs to, if that user still exists. A
+ * customer left by a deleted rep / doctor is free: the next user with its
+ * email takes it over.
+ */
+async function liveOwner(c: WooCustomer): Promise<string | undefined> {
+  const owner = ownerOf(c);
+  if (!owner || !/^[a-f0-9]{24}$/i.test(owner)) return owner;
+  const [rep, doc] = await Promise.all([
+    prisma.salesRepresentative.findUnique({ where: { id: owner }, select: { id: true } }),
+    prisma.partneringPhysician.findUnique({ where: { id: owner }, select: { id: true } }),
+  ]);
+  return rep || doc ? owner : undefined;
+}
 
 async function findCustomerByEmail(email: string): Promise<WooCustomer | null> {
   // role=all also finds WordPress users that aren't "customer" (e.g. an admin)
@@ -180,7 +211,7 @@ export async function syncWooCustomer(
     if (u.wooCustomerId) {
       const current = await getCustomer(u.wooCustomerId);
       if (current) {
-        const owner = ownerOf(current);
+        const owner = await liveOwner(current);
         if (owner && owner !== u.id) {
           return { ...res, status: "shared", wooCustomerId: current.id, reason: "customer owned by another Pronuvia user" };
         }
@@ -194,7 +225,7 @@ export async function syncWooCustomer(
 
     const existing = await findCustomerByEmail(u.email);
     if (existing) {
-      const owner = ownerOf(existing);
+      const owner = await liveOwner(existing);
       if (!opts.dryRun) {
         if (!owner) {
           // Unclaimed account with this email: claim it and fill in our details
@@ -212,18 +243,23 @@ export async function syncWooCustomer(
 
     if (opts.dryRun) return { ...res, status: "created", reason: "would create" };
 
+    // The username is the Login ID (never used to log in — Pronuvia login
+    // stays in Next.js); taken in WP or no Login ID → pronuvia-<role>-<id>
+    const create = (username: string) => wooFetch<WooCustomer>("wc/v3/customers", {
+      method: "POST",
+      body: { ...customerBody(u), username, password: randomBytes(24).toString("base64url") },
+    });
     try {
-      const { data } = await wooFetch<WooCustomer>("wc/v3/customers", {
-        method: "POST",
-        body: {
-          ...customerBody(u),
-          // Never used to log in — Pronuvia login stays in Next.js
-          username: `pronuvia-${role.toLowerCase().replace("_", "-")}-${u.id}`,
-          password: randomBytes(24).toString("base64url"),
-        },
-      });
-      await saveWooCustomerId(role, u.id, data.id);
-      return { ...res, status: "created", wooCustomerId: data.id };
+      const wanted = wpUsername(u.loginId);
+      let created: WooCustomer;
+      try {
+        created = (await create(wanted ?? fallbackUsername(role, u.id))).data;
+      } catch (e) {
+        if (!(wanted && e instanceof WooError && e.code === "registration-error-username-exists")) throw e;
+        created = (await create(fallbackUsername(role, u.id))).data;
+      }
+      await saveWooCustomerId(role, u.id, created.id);
+      return { ...res, status: "created", wooCustomerId: created.id };
     } catch (e) {
       // Lost a race with another request creating the same email: link it
       if (e instanceof WooError && e.code === "registration-error-email-exists") {
