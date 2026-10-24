@@ -1,6 +1,6 @@
 // Re-syncs every rep / approved doctor to their WooCommerce customer (name,
-// email, addresses, Login ID). With the "Pronuvia Usernames" plugin active in
-// WP, older accounts' usernames then become their Login ID.
+// email, addresses, Login ID). With the "Pronuvia Customer Accounts" plugin active in
+// WP, older accounts get their Login ID as username (and Sales Rep / Doctor role).
 //   tsx --conditions=react-server --env-file=.env scripts/woo-sync-customers.mts --dry
 import { prisma } from "@/lib/db/prisma";
 import { syncAllWooCustomers } from "@/lib/woo/customers";

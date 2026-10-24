@@ -51,7 +51,7 @@ type UserProfile = {
 // meta from the REST API, so it could never be read back.
 const META_ROLE  = "pronuvia_role";
 const META_OWNER = "pronuvia_user_id";
-// The WP username follows it (plugin wordpress/pronuvia-usernames renames the user)
+// The WP username follows it (plugin wordpress/pronuvia-customers renames the user)
 const META_LOGIN = "pronuvia_login_id";
 
 /**
