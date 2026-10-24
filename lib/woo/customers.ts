@@ -30,7 +30,7 @@ export type CustomerSyncResult = {
   reason?:        string;
 };
 
-type WooCustomer = { id: number; email: string; role?: string; meta_data: WooMeta[] };
+type WooCustomer = { id: number; email: string; username?: string; role?: string; meta_data: WooMeta[] };
 
 type UserProfile = {
   role:          CustomerRole;
@@ -184,6 +184,37 @@ async function getCustomer(id: number): Promise<WooCustomer | null> {
 
 const errorText = (e: unknown) =>
   e instanceof WooError ? `${e.message} (${e.code})` : e instanceof Error ? e.message : String(e);
+
+/**
+ * Registration check: a WP account with this email that no current Pronuvia
+ * user has (left by a deleted rep / doctor, or made in WP itself) blocks a
+ * new rep / doctor with the same email. An account a current Pronuvia user
+ * has (e.g. the same person as rep and doctor) does not. WooCommerce not
+ * answering does not block registration either (logged).
+ */
+export async function wooEmailTaken(email: string): Promise<{ id: number; username: string } | null> {
+  try {
+    const c = await findCustomerByEmail(email.trim().toLowerCase());
+    if (!c) return null;
+    if (await liveOwner(c)) return null;
+    const [rep, doc] = await Promise.all([
+      prisma.salesRepresentative.findFirst({ where: { wooCustomerId: c.id }, select: { id: true } }),
+      prisma.partneringPhysician.findFirst({ where: { wooCustomerId: c.id }, select: { id: true } }),
+    ]);
+    if (rep || doc) return null;
+    return { id: c.id, username: c.username ?? "" };
+  } catch (e) {
+    console.error("[woo-customer] email check failed, registration allowed:", e);
+    return null;
+  }
+}
+
+/** The error shown for an email taken in WP: plain for users, with details for admins. */
+export function wooEmailTakenMessage(t: { id: number; username: string }, forAdmin: boolean): string {
+  return forAdmin
+    ? `This email already has a WordPress account (#${t.id}${t.username ? `, username ${t.username}` : ""}). Delete it in WP admin (Users) or use another email.`
+    : "This email is already registered. Please use another email or contact Pronuvia support.";
+}
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ import { passwordSetupEmail } from "@/lib/email/templates";
 import { z } from "zod";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
-import { scheduleWooCustomerSync } from "@/lib/woo/customers";
+import { scheduleWooCustomerSync, wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
 
 export type SalesRepActionState = {
   errors?: Record<string, string[]>;
@@ -69,6 +69,10 @@ export async function createSalesRep(
 
   const exists = await prisma.salesRepresentative.findUnique({ where: { email: data.email } });
   if (exists) return { errors: { email: ["A sales rep with this email already exists."] } };
+  // A WP account with this email that no current Pronuvia user has (e.g. left
+  // by a deleted user) blocks the new account
+  const takenInWp = await wooEmailTaken(data.email);
+  if (takenInWp) return { errors: { email: [wooEmailTakenMessage(takenInWp, true)] } };
 
   if (data.loginId && await isLoginIdTaken(data.loginId, undefined, "SALES_REP")) {
     return { errors: { loginId: ["This Login ID is already in use."] } };

@@ -8,6 +8,7 @@ import { sendMail }                     from "@/lib/email/mailer";
 import { doctorRegistrationEmail }      from "@/lib/email/templates";
 import { LoginIdSchema } from "@/lib/validations/login-id";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
+import { wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
 
 const BaseSchema = z.object({
@@ -131,6 +132,12 @@ export async function registerPhysician(
   });
   if (exists) {
     return { errors: { email: ["An account with this email already exists."] }, values: strValues };
+  }
+  // A WP account with this email that no current Pronuvia user has (e.g. left
+  // by a deleted user) blocks the new account
+  const takenInWp = await wooEmailTaken(validated.data.email);
+  if (takenInWp) {
+    return { errors: { email: [wooEmailTakenMessage(takenInWp, false)] }, values: strValues };
   }
 
   if (await isLoginIdTaken(validated.data.loginId)) {

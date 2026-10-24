@@ -13,7 +13,7 @@ import { physicianApprovalEmail, salesRepPhysicianAssignedEmail } from "@/lib/em
 import { doctorRegistrationEmail } from "@/lib/email/templates";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
-import { scheduleWooCustomerSync } from "@/lib/woo/customers";
+import { scheduleWooCustomerSync, wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
 
 export type PhysicianActionState = {
   errors?:  Record<string, string[]>;
@@ -86,6 +86,12 @@ export async function adminCreatePhysician(
   });
   if (exists) {
     return { errors: { email: ["A physician with this email already exists."] }, values: strValues };
+  }
+  // A WP account with this email that no current Pronuvia user has (e.g. left
+  // by a deleted user) blocks the new account
+  const takenInWp = await wooEmailTaken(validated.data.email);
+  if (takenInWp) {
+    return { errors: { email: [wooEmailTakenMessage(takenInWp, true)] }, values: strValues };
   }
 
   if (await isLoginIdTaken(validated.data.loginId)) {
