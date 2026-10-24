@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth/dal";
 import { getSalesRepById } from "@/actions/admin/manage-sales-reps";
 import { DownlineTable } from "@/components/admin/downline-table";
 import { formatDateLong } from "@/lib/utils/timezone";
+import { formatAddressLines } from "@/lib/addresses/formats";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -16,30 +17,15 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-type AddressObj = { line1?: string; line2?: string; city?: string; state?: string; zipCode?: string; country?: string };
-
 function AddressDisplay({ label, raw }: { label: string; raw?: string | null }) {
-  let addr: AddressObj | null = null;
-  if (raw) {
-    try { addr = JSON.parse(raw); } catch { /* raw string, show as-is */ }
-  }
+  // Either saved shape (the admin form's or the rep's own account form's)
+  const text = formatAddressLines(raw);
 
   return (
     <div>
       <dt className="text-xs text-gray-400 font-medium mb-0.5 uppercase tracking-wide">{label}</dt>
       <dd className="text-sm text-gray-700 leading-relaxed">
-        {!addr ? (
-          raw ? <span>{raw}</span> : <span className="text-gray-300">—</span>
-        ) : (
-          <span className="whitespace-pre-line">
-            {[
-              addr.line1,
-              addr.line2,
-              [addr.city, addr.state, addr.zipCode].filter(Boolean).join(", "),
-              addr.country,
-            ].filter(Boolean).join("\n") || <span className="text-gray-300">—</span>}
-          </span>
-        )}
+        {text ? <span className="whitespace-pre-line">{text}</span> : <span className="text-gray-300">—</span>}
       </dd>
     </div>
   );

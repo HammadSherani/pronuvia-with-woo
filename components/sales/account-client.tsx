@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateSalesRepProfile, type ProfileState } from "@/actions/sales-rep/profile";
 import { AddressFields, migrateAddressData, type AddressData, EMPTY_ADDRESS } from "@/components/shared/address-fields";
 import { formatDateLong } from "@/lib/utils/timezone";
+import { formatAddressLines, toAddress1Shape } from "@/lib/addresses/formats";
 import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
 type Rep = {
@@ -41,18 +42,7 @@ function InfoRow({ label, value }: { label: string; value?: string | number | nu
   );
 }
 
-type AddrObj = { line1?: string; line2?: string; city?: string; state?: string; zipCode?: string; country?: string };
-function parseAddress(raw: string | null | undefined): string {
-  if (!raw) return "";
-  try {
-    const a: AddrObj = JSON.parse(raw);
-    return [
-      a.line1, a.line2,
-      [a.city, a.state, a.zipCode].filter(Boolean).join(", "),
-      a.country,
-    ].filter(Boolean).join("\n");
-  } catch { return raw; }
-}
+const parseAddress = formatAddressLines;
 
 function AddressRow({ label, raw }: { label: string; raw?: string | null }) {
   const formatted = parseAddress(raw);
@@ -175,7 +165,7 @@ function EditMode({ r, onCancel }: { r: Rep; onCancel: () => void }) {
   const [mismatch,     setMismatch]     = useState(false);
 
   const parseAddr = (raw: string | null): AddressData =>
-    raw ? migrateAddressData((() => { try { return JSON.parse(raw); } catch { return {}; } })()) : { ...EMPTY_ADDRESS };
+    raw ? migrateAddressData(toAddress1Shape(raw)) : { ...EMPTY_ADDRESS };
 
   const [billingAddr,  setBillingAddr]  = useState<AddressData>(() => parseAddr(r.billingAddress));
   const [shippingAddr, setShippingAddr] = useState<AddressData>(() => parseAddr(r.shippingAddress));

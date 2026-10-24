@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { Country, State } from "country-state-city";
+import { toLineAddress } from "@/lib/addresses/formats";
 import { updateSalesRepProfile } from "@/actions/sales-rep/profile";
 import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
@@ -41,14 +42,9 @@ function Field({
 type AddrFields = { line1: string; line2: string; city: string; zipCode: string; country: string; state: string };
 const emptyAddr = (): AddrFields => ({ line1: "", line2: "", city: "", zipCode: "", country: "", state: "" });
 
+// Either saved shape (this form's, or the rep's own account form's)
 function parseAddr(raw?: string | null): AddrFields {
-  if (!raw) return emptyAddr();
-  try {
-    const p = JSON.parse(raw);
-    if (p && typeof p === "object" && "line1" in p)
-      return { line1: p.line1 ?? "", line2: p.line2 ?? "", city: p.city ?? "", zipCode: p.zipCode ?? "", country: p.country ?? "", state: p.state ?? "" };
-  } catch { /* fall through */ }
-  return { line1: raw, line2: "", city: "", zipCode: "", country: "", state: "" };
+  return raw ? toLineAddress(raw) : emptyAddr();
 }
 
 const inputCls = (err?: boolean) =>

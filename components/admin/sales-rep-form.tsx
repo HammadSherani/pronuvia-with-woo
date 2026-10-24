@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { Country, State } from "country-state-city";
+import { toLineAddress } from "@/lib/addresses/formats";
 import type { SalesRepActionState } from "@/actions/admin/manage-sales-reps";
 import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
@@ -37,14 +38,9 @@ function Req() { return <span className="text-red-400"> *</span>; }
 type AddrFields = { line1: string; line2: string; city: string; zipCode: string; country: string; state: string };
 const emptyAddr = (): AddrFields => ({ line1: "", line2: "", city: "", zipCode: "", country: "", state: "" });
 
+// Either saved shape (this form's, or the rep's own account form's)
 function parseAddr(raw?: string | null): AddrFields {
-  if (!raw) return emptyAddr();
-  try {
-    const p = JSON.parse(raw);
-    if (p && typeof p === "object" && "line1" in p)
-      return { line1: p.line1 ?? "", line2: p.line2 ?? "", city: p.city ?? "", zipCode: p.zipCode ?? "", country: p.country ?? "", state: p.state ?? "" };
-  } catch { /* fall through */ }
-  return { line1: raw, line2: "", city: "", zipCode: "", country: "", state: "" };
+  return raw ? toLineAddress(raw) : emptyAddr();
 }
 
 export function SalesRepForm({ action, submitLabel, backHref, successRedirect, isEdit, defaults }: SalesRepFormProps) {
