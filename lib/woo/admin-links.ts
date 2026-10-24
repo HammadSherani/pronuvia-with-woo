@@ -16,6 +16,7 @@ export const wpAdmin = {
   editProduct: (wooId: string | number) => sso(`post.php?post=${wooId}&action=edit`),
   categories:  () => sso("edit-tags.php?taxonomy=product_cat&post_type=product"),
   shipping:    () => sso("admin.php?page=wc-settings&tab=shipping"),
+  shippingZone: (zoneId: number) => sso(`admin.php?page=wc-settings&tab=shipping&zone_id=${zoneId}`),
   coupons:     () => sso("edit.php?post_type=shop_coupon"),
   // High-performance order storage (HPOS) is on
   editOrder:   (wooId: number) => sso(`admin.php?page=wc-orders&action=edit&id=${wooId}`),
