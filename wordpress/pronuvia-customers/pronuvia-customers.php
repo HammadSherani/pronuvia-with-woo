@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Customer Accounts
  * Description: Gives each Pronuvia rep / doctor customer account the site's sales rep / doctor role (mlm_sales_rep / doctor), and keeps its username equal to their Pronuvia Login ID.
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -13,6 +13,9 @@
  *     created, with Customer permissions, only if missing);
  *   - `pronuvia_login_id`: WordPress can't change a username, so this plugin
  *     renames the account to the Login ID.
+ * `pronuvia_role` = DELETED (sent by Pronuvia right before it deletes the
+ * account, when the rep / doctor is deleted there) puts the role back to
+ * Customer, the only role WooCommerce lets its API delete.
  * Only Pronuvia customer accounts are touched, never an account that can
  * manage the site, and never a username another user has. These accounts are
  * never used to log in (Pronuvia login stays in Pronuvia).
@@ -73,11 +76,15 @@ function pronuvia_customer_set_role( $user_id, $pronuvia_role ) {
 	if ( ! $user ) {
 		return 'no user';
 	}
-	if ( ! isset( PRONUVIA_CUSTOMER_ROLES[ $pronuvia_role ] ) ) {
+	if ( 'DELETED' !== $pronuvia_role && ! isset( PRONUVIA_CUSTOMER_ROLES[ $pronuvia_role ] ) ) {
 		return 'unknown role';
 	}
 	if ( pronuvia_customer_is_admin( $user ) ) {
 		return 'admin account';
+	}
+	if ( 'DELETED' === $pronuvia_role ) {
+		$user->set_role( 'customer' );
+		return 'role reset';
 	}
 	pronuvia_customer_roles_register();
 	$role = PRONUVIA_CUSTOMER_ROLES[ $pronuvia_role ][0];

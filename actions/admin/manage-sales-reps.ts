@@ -11,7 +11,7 @@ import { passwordSetupEmail } from "@/lib/email/templates";
 import { z } from "zod";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
-import { scheduleWooCustomerSync, wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
+import { deleteWooCustomerNote, deleteWooCustomerOf, scheduleWooCustomerSync, wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
 
 export type SalesRepActionState = {
   errors?: Record<string, string[]>;
@@ -220,9 +220,11 @@ export async function deleteSalesRep(id: string): Promise<SalesRepActionState> {
   await requireAdmin();
   const existing = await prisma.salesRepresentative.findUnique({ where: { id } });
   if (!existing) return { message: "Sales representative not found." };
+  // Their WP customer account goes too (before, while we still know it)
+  const wp = await deleteWooCustomerOf("SALES_REP", id);
   await prisma.salesRepresentative.delete({ where: { id } });
   revalidatePath("/admin/sales-reps");
-  return { success: true, message: "Sales representative deleted." };
+  return { success: true, message: `Sales representative deleted.${deleteWooCustomerNote(wp)}` };
 }
 
 export async function listSalesReps(opts?: { skip?: number; take?: number }) {

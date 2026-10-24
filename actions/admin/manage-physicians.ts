@@ -13,7 +13,7 @@ import { physicianApprovalEmail, salesRepPhysicianAssignedEmail } from "@/lib/em
 import { doctorRegistrationEmail } from "@/lib/email/templates";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { duplicateKeyField } from "@/lib/db/prisma-errors";
-import { scheduleWooCustomerSync, wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
+import { deleteWooCustomerNote, deleteWooCustomerOf, scheduleWooCustomerSync, wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
 
 export type PhysicianActionState = {
   errors?:  Record<string, string[]>;
@@ -368,9 +368,11 @@ export async function deletePhysician(id: string): Promise<PhysicianActionState>
     return { message: "Physician not found." };
   }
 
+  // Their WP customer account goes too (before, while we still know it)
+  const wp = await deleteWooCustomerOf("PHYSICIAN", id);
   await prisma.partneringPhysician.delete({ where: { id } });
   revalidatePath("/admin/physicians");
-  return { success: true, message: "Physician deleted." };
+  return { success: true, message: `Physician deleted.${deleteWooCustomerNote(wp)}` };
 }
 
 export async function getPhysicianById(id: string) {

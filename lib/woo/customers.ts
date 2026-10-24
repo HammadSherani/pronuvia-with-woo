@@ -216,6 +216,60 @@ export function wooEmailTakenMessage(t: { id: number; username: string }, forAdm
     : "This email is already registered. Please use another email or contact Pronuvia support.";
 }
 
+// Roles a Pronuvia rep / doctor account can have (WooCommerce's default, or the
+// site's ones set by the Pronuvia Customer Accounts plugin). Anything else
+// (administrator, shop manager…) is never deleted from here.
+const DELETABLE_ROLES = new Set(["customer", "doctor", "mlm_sales_rep"]);
+
+/**
+ * A rep / doctor is deleted from the dashboard: their WP customer account goes
+ * too (call before deleting the Pronuvia user). Not when another current
+ * Pronuvia user also has that account (the same person as rep and doctor), or
+ * it belongs to someone else, or it is a staff account. Their WooCommerce
+ * orders stay (as guest orders, with their billing details). Never throws;
+ * returns what happened, for the admin's message.
+ */
+export async function deleteWooCustomerOf(
+  role: CustomerRole, userId: string,
+): Promise<"deleted" | "none" | "kept-shared" | "kept-staff" | "failed"> {
+  try {
+    const u = role === "SALES_REP"
+      ? await prisma.salesRepresentative.findUnique({ where: { id: userId }, select: { email: true, wooCustomerId: true } })
+      : await prisma.partneringPhysician.findUnique({ where: { id: userId }, select: { email: true, wooCustomerId: true } });
+    if (!u) return "none";
+    const c = u.wooCustomerId ? await getCustomer(u.wooCustomerId) : await findCustomerByEmail(u.email);
+    if (!c) return "none";
+    const owner = ownerOf(c);
+    if (!u.wooCustomerId && owner !== userId) return "none";            // found by email only: ours only if it says so
+    if (!DELETABLE_ROLES.has(c.role ?? "customer")) return "kept-staff";
+    if (owner && owner !== userId && await liveOwner(c)) return "kept-shared";
+    const [rep, doc] = await Promise.all([
+      prisma.salesRepresentative.findFirst({ where: { wooCustomerId: c.id, NOT: { id: userId } }, select: { id: true } }),
+      prisma.partneringPhysician.findFirst({ where: { wooCustomerId: c.id, NOT: { id: userId } }, select: { id: true } }),
+    ]);
+    if (rep || doc) return "kept-shared";
+    // WooCommerce's API deletes only Customer accounts: the Pronuvia Customer
+    // Accounts plugin puts the role back on pronuvia_role = DELETED
+    if ((c.role ?? "customer") !== "customer") {
+      await wooFetch(`wc/v3/customers/${c.id}`, { method: "PUT", body: { meta_data: [{ key: META_ROLE, value: "DELETED" }] } });
+    }
+    await wooFetch(`wc/v3/customers/${c.id}?force=true`, { method: "DELETE" });
+    return "deleted";
+  } catch (e) {
+    console.error(`[woo-customer] ${role} ${userId}: WP account not deleted:`, e);
+    return "failed";
+  }
+}
+
+const DELETE_NOTE: Record<Awaited<ReturnType<typeof deleteWooCustomerOf>>, string> = {
+  "deleted":     " Their WordPress account was deleted too (their orders stay in WooCommerce).",
+  "none":        "",
+  "kept-shared": " Their WordPress account was kept: another Pronuvia user has it too.",
+  "kept-staff":  " Their WordPress account was kept: it is a staff account.",
+  "failed":      " Their WordPress account could not be deleted: delete it in WP admin (Users).",
+};
+export const deleteWooCustomerNote = (r: Awaited<ReturnType<typeof deleteWooCustomerOf>>) => DELETE_NOTE[r];
+
 // ── Sync ──────────────────────────────────────────────────────────────────────
 
 /**
