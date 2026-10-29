@@ -1,5 +1,6 @@
 ﻿import { requireAdmin } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db/prisma";
+import { markAdminNavSeen } from "@/lib/admin/nav-badges";
 import { ApprovalsClient } from "@/components/admin/approvals-client";
 import { Pagination } from "@/components/shared/pagination";
 import { parsePagination } from "@/lib/pagination";
@@ -12,7 +13,8 @@ export default async function ApprovalsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdmin();
+  const session = await requireAdmin();
+  await markAdminNavSeen(session.userId, "approvals");   // its red count goes
   const sp = await searchParams;
   const { page, pageSize, skip, take } = parsePagination(sp);
 

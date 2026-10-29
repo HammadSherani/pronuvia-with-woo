@@ -3,10 +3,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
-// The admin's red dots: fetched on every page change and every minute. The
-// page being viewed never shows its own dot (opening it is "seen").
+// The admin's red counts: how many new things since each tab was last opened,
+// fetched on every page change and every minute. The page being viewed never
+// shows its own count (opening it clears it).
 
-type Badges = { orders?: boolean; approvals?: boolean; payouts?: boolean; emailLogs?: boolean };
+type Badges = { orders?: number; approvals?: number; payouts?: number; emailLogs?: number };
 
 const BADGE_OF: Record<string, keyof Badges> = {
   "/admin/orders":      "orders",
@@ -36,41 +37,41 @@ export function AdminBadgesProvider({ enabled, children }: { enabled: boolean; c
   return <BadgesContext.Provider value={badges}>{children}</BadgesContext.Provider>;
 }
 
-/** Does this link get a dot? (never the page being viewed; approvals stay while any is pending) */
-export function useNavBadge(href: string | undefined): boolean {
+/** The count for one link (0 for the page being viewed). */
+function useCount(href: string | undefined): number {
   const badges = useContext(BadgesContext);
   const pathname = usePathname();
   const key = href ? BADGE_OF[href] : undefined;
-  if (!key || !badges[key]) return false;
-  const here = pathname === href || pathname.startsWith(href + "/");
-  return key === "approvals" ? !pathname.startsWith("/admin/approvals") : !here;
+  if (!key || !href) return 0;
+  if (pathname === href || pathname.startsWith(href + "/")) return 0;
+  return badges[key] ?? 0;
 }
 
-/** A dropdown gets a dot when one of its links has one. */
-export function useAnyNavBadge(hrefs: (string | undefined)[]): boolean {
-  const badges = useContext(BadgesContext);
-  const pathname = usePathname();
-  return hrefs.some((href) => {
-    const key = href ? BADGE_OF[href] : undefined;
-    return !!key && !!badges[key] && !(pathname === href || pathname.startsWith(href + "/"));
-  });
-}
-
-export function BlinkDot({ className = "" }: { className?: string }) {
+export function CountBadge({ count, className = "" }: { count: number; className?: string }) {
+  if (count <= 0) return null;
   return (
-    <span className={`relative inline-flex h-2 w-2 shrink-0 ${className}`} aria-label="New">
-      <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
-      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+    <span className={`relative inline-flex shrink-0 ${className}`} aria-label={`${count} new`}>
+      <span className="absolute inset-0 rounded-full bg-red-400 opacity-60 animate-ping" />
+      <span className="relative inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+        {count > 99 ? "99+" : count}
+      </span>
     </span>
   );
 }
 
-/** The dot for one link, if it has one. */
+/** The count for one link, if it has one. */
 export function NavDot({ href, className }: { href?: string; className?: string }) {
-  return useNavBadge(href) ? <BlinkDot className={className} /> : null;
+  return <CountBadge count={useCount(href)} className={className} />;
 }
 
-/** The dot for a dropdown, if one of its links has one. */
+/** A dropdown shows the total of its links. */
 export function AnyNavDot({ hrefs, className }: { hrefs: (string | undefined)[]; className?: string }) {
-  return useAnyNavBadge(hrefs) ? <BlinkDot className={className} /> : null;
+  const badges = useContext(BadgesContext);
+  const pathname = usePathname();
+  const total = hrefs.reduce((sum, href) => {
+    const key = href ? BADGE_OF[href] : undefined;
+    if (!key || !href || pathname === href || pathname.startsWith(href + "/")) return sum;
+    return sum + (badges[key] ?? 0);
+  }, 0);
+  return <CountBadge count={total} className={className} />;
 }
