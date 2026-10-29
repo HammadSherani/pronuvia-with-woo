@@ -5,7 +5,10 @@ import { hashPassword }                 from "@/lib/auth/password";
 import { Role, ApprovalStatus }         from "@/generated/prisma/enums";
 import { z }                            from "zod";
 import { sendMail }                     from "@/lib/email/mailer";
-import { doctorRegistrationEmail }      from "@/lib/email/templates";
+import { doctorRegistrationEmail, newPhysicianApplicationEmail } from "@/lib/email/templates";
+
+// New applications are also sent here, for the team to review
+const APPLICATIONS_TO = "pronuvia@gmail.com";
 import { LoginIdSchema } from "@/lib/validations/login-id";
 import { isLoginIdTaken } from "@/lib/auth/physician-lookup";
 import { wooEmailTaken, wooEmailTakenMessage } from "@/lib/woo/customers";
@@ -156,8 +159,9 @@ export async function registerPhysician(
   const { password, confirmPassword: _confirmPassword, ...rest } = validatedProfile;
   const hashed = await hashPassword(password);
 
+  let createdId: string;
   try {
-    await prisma.partneringPhysician.create({
+    ({ id: createdId } = await prisma.partneringPhysician.create({
       data: {
         ...rest,
         password:          hashed,
@@ -168,7 +172,8 @@ export async function registerPhysician(
         commission:        0,
         uplineCommission:  0,
       },
-    });
+      select: { id: true },
+    }));
   } catch (err) {
     const field = duplicateKeyField(err);
     if (field === "loginId") return { errors: { loginId: ["This Login ID is already in use."] }, values: strValues };
@@ -184,6 +189,20 @@ export async function registerPhysician(
     await sendMail({ to: validated.data.email, subject, html });
   } catch (err) {
     console.error("[email] signup confirmation FAILED for", validated.data.email, err);
+  }
+
+  // The team is told about the new application
+  try {
+    const d = validated.data;
+    const { subject, html } = newPhysicianApplicationEmail({
+      physicianId: createdId,
+      firstName: d.firstName, lastName: d.lastName, email: d.email, loginId: d.loginId, phone: d.phone,
+      nameOfPractice: d.nameOfPractice, license: d.license, fieldsOfSpeciality,
+      address: [d.addressOne, d.addressTwo, [d.city, d.state, d.zipCode].filter(Boolean).join(", "), d.country].filter(Boolean).join(", "),
+    });
+    await sendMail({ to: APPLICATIONS_TO, subject, html, type: "New Physician Application", relatedId: createdId });
+  } catch (err) {
+    console.error("[email] new application notice FAILED:", err);
   }
 
   return {

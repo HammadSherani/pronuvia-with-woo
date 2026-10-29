@@ -143,6 +143,47 @@ export function salesRepDoctorApprovedEmail(opts: {
 }
 
 // ─────────────────────────────────────────────
+// Internal notification — new physician application (website sign-up form)
+// ─────────────────────────────────────────────
+export function newPhysicianApplicationEmail(opts: {
+  physicianId: string;
+  firstName: string; lastName: string; email: string; loginId: string; phone: string;
+  nameOfPractice: string; license: string; fieldsOfSpeciality: string[];
+  address: string;
+}) {
+  const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const name = `${opts.firstName} ${opts.lastName}`.trim();
+  const subject = `New physician application: ${name}`;
+  const row = (label: string, value: string) => value
+    ? `<tr>
+        <td style="padding:6px 0;font-size:13px;color:${C.muted};white-space:nowrap;vertical-align:top;width:150px;">${label}</td>
+        <td style="padding:6px 0 6px 12px;font-size:13px;color:${C.text};font-weight:600;word-break:break-word;">${esc(value)}</td>
+      </tr>`
+    : "";
+  const html = base(`
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:${C.ink};">New Physician Application</h1>
+    <p style="margin:0 0 20px;font-size:14px;color:${C.textSoft};line-height:1.7;">
+      <strong style="color:${C.text};">${esc(name)}</strong> applied to the Partner Program on the website.
+      The application is pending your approval.
+    </p>
+    ${infoBox(`
+      <table cellpadding="0" cellspacing="0" style="width:100%;">
+        ${row("Name:", name)}
+        ${row("Email:", opts.email)}
+        ${row("Login ID:", opts.loginId)}
+        ${row("Phone:", opts.phone)}
+        ${row("Practice:", opts.nameOfPractice)}
+        ${row("License:", opts.license)}
+        ${row("Specialities:", opts.fieldsOfSpeciality.join(", "))}
+        ${row("Address:", opts.address)}
+      </table>
+    `)}
+    ${btn(`${getAppUrl()}/admin/approvals/${opts.physicianId}`, "Review Application")}
+  `);
+  return { subject, html };
+}
+
+// ─────────────────────────────────────────────
 // Sales rep notification — doctor signed up
 // ─────────────────────────────────────────────
 export function salesRepDoctorSignupEmail(opts: {
