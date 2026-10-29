@@ -17,7 +17,7 @@ import { CommissionHistory } from "@/components/orders/commission-history";
 
 type Props = { params: Promise<{ id: string }> };
 
-type AddrObj = { firstName?: string; lastName?: string; phone?: string; address1?: string; address2?: string; city?: string; state?: string; zip?: string; country?: string };
+type AddrObj = { firstName?: string; lastName?: string; company?: string; phone?: string; address1?: string; address2?: string; city?: string; state?: string; zip?: string; country?: string };
 
 function parseAddrPhone(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -49,6 +49,7 @@ function fmtAddress(raw: string | null | undefined): string | null {
     const a: AddrObj = JSON.parse(raw);
     return [
       [a.firstName, a.lastName].filter(Boolean).join(" "),
+      a.company,
       a.address1,
       a.address2,
       [a.city, a.state, a.zip].filter(Boolean).join(", "),

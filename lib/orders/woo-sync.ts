@@ -30,6 +30,7 @@ function address(raw: string | null | undefined): WooOrderAddress | null {
     const a = JSON.parse(raw) as Record<string, string | undefined>;
     return {
       first_name: a.firstName ?? "", last_name: a.lastName ?? "",
+      company:    a.company   ?? "",
       address_1:  a.address1  ?? "", address_2: a.address2 ?? "",
       city:       a.city      ?? "", state:     a.state    ?? "",
       postcode:   a.zip       ?? "", country:   a.country  ?? "",

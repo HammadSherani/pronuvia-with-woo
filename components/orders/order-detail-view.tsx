@@ -8,7 +8,7 @@ import { CommissionHistory } from "./commission-history";
 // Read-only order detail for the sales rep and physician portals, showing
 // refunds the way the admin order page does.
 
-type AddrObj = { firstName?: string; lastName?: string; phone?: string; address1?: string; address2?: string; city?: string; state?: string; zip?: string; country?: string };
+type AddrObj = { firstName?: string; lastName?: string; company?: string; phone?: string; address1?: string; address2?: string; city?: string; state?: string; zip?: string; country?: string };
 
 const statusStyle: Record<OrderStatus, string> = {
   PENDING:    "bg-amber-50   text-amber-700   border-amber-200",
@@ -44,6 +44,7 @@ function Address({ title, raw }: { title: string; raw: string | null | undefined
       {a ? (
         <div className="text-sm text-gray-700 leading-relaxed">
           {(a.firstName || a.lastName) && <p className="font-semibold text-gray-800">{[a.firstName, a.lastName].filter(Boolean).join(" ")}</p>}
+          {a.company && <p>{a.company}</p>}
           {a.address1 && <p>{a.address1}</p>}
           {a.address2 && <p>{a.address2}</p>}
           <p>{[a.city, a.state, a.zip].filter(Boolean).join(", ")}</p>

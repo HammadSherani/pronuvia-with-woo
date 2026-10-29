@@ -30,7 +30,7 @@ export const META = {
 // ── addresses: our JSON (AddressData) ⇄ Woo ──
 
 type AddressJson = {
-  firstName: string; lastName: string; phone: string; address1: string; address2: string;
+  firstName: string; lastName: string; company?: string; phone: string; address1: string; address2: string;
   city: string; state: string; stateName: string; zip: string; country: string; countryName: string;
 };
 
@@ -40,6 +40,7 @@ export function toWooAddress(raw: string | null | undefined): WooOrderAddress | 
     const a = JSON.parse(raw) as Partial<AddressJson>;
     return {
       first_name: a.firstName ?? "", last_name: a.lastName ?? "",
+      company:    a.company   ?? "",
       address_1:  a.address1  ?? "", address_2: a.address2 ?? "",
       city:       a.city      ?? "", state:     a.state    ?? "",
       postcode:   a.zip       ?? "", country:   a.country  ?? "",
@@ -54,7 +55,7 @@ function fromWooAddress(w: WooOrderAddress): AddressJson {
   // Woo prefixes some state codes ("DE-BE"); our form uses the bare code
   const state = w.state.startsWith(`${w.country}-`) ? w.state.slice(w.country.length + 1) : w.state;
   return {
-    firstName: w.first_name, lastName: w.last_name, phone: w.phone ?? "",
+    firstName: w.first_name, lastName: w.last_name, ...(w.company && { company: w.company }), phone: w.phone ?? "",
     address1:  w.address_1,  address2: w.address_2,
     city:      w.city, state,
     stateName: State.getStateByCodeAndCountry(state, w.country)?.name ?? state,

@@ -23,7 +23,7 @@ function fmtMoney(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-type AddrObj = { firstName?: string; lastName?: string; phone?: string; address1?: string; address2?: string; city?: string; state?: string; zip?: string; country?: string };
+type AddrObj = { firstName?: string; lastName?: string; company?: string; phone?: string; address1?: string; address2?: string; city?: string; state?: string; zip?: string; country?: string };
 
 function getShippingLabel(shippingAddress: string | null | undefined, shippingRate: number): string {
   if (shippingRate <= 0) return "Free Shipping";
@@ -49,6 +49,7 @@ function fmtAddress(raw: string | null | undefined): string {
     const a: AddrObj = JSON.parse(raw);
     return [
       [a.firstName, a.lastName].filter(Boolean).join(" "),
+      a.company,
       a.address1, a.address2,
       [a.city, a.state, a.zip].filter(Boolean).join(", "),
       a.country,

@@ -10,7 +10,7 @@ import type { OrderItem } from "@/actions/admin/manage-orders";
 type Props = { params: Promise<{ id: string }> };
 
 type AddrObj = {
-  firstName?: string; lastName?: string; phone?: string;
+  firstName?: string; lastName?: string; company?: string; phone?: string;
   address1?: string; address2?: string; city?: string;
   state?: string; zip?: string; country?: string;
 };
@@ -25,6 +25,7 @@ function fmtAddress(raw: string | null | undefined): string {
     const a: AddrObj = JSON.parse(raw);
     return [
       [a.firstName, a.lastName].filter(Boolean).join(" "),
+      a.company,
       a.address1, a.address2,
       [a.city, a.state, a.zip].filter(Boolean).join(", "),
       a.country,

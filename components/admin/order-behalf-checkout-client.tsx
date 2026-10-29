@@ -14,8 +14,8 @@ import { confirmBehalfCardOrder } from "@/actions/admin/order-behalf";
 import { useCheckoutQuote, checkoutSubmission, type CheckoutPayload } from "@/lib/checkout/use-checkout-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
+import { CheckoutOrderSummary } from "@/components/shared/checkout-order-summary";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
-import { formatCurrency } from "@/lib/utils/currency";
 
 function hasAddr(a: AddressData) {
   return !!(a.firstName || a.address1 || a.city);
@@ -179,39 +179,35 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
 
   const migrated = migrateAddressData({ ...EMPTY_ADDRESS, ...initialAddress });
   const [email,         setEmail]         = useState("");
-  const [shipping,      setShipping]      = useState<AddressData>(migrated);
+  // Billing is the main address (as on WooCommerce); shipping only when
+  // "Ship to a different address?" is ticked
   const [billing,       setBilling]       = useState<AddressData>(migrated);
-  const [sameAsBilling, setSameAsBilling] = useState(true);
+  const [shipping,      setShipping]      = useState<AddressData>(migrated);
+  const [shipToDifferent, setShipToDifferent] = useState(false);
+  const shipTo = shipToDifferent ? shipping : billing;
 
   // Shipping options
+  const quote = useCheckoutQuote(items, shipTo);
   const {
     options:     shippingOptions,
     selected:    selectedShipping,
-    setSelected: setSelectedShipping,
     loading:     loadingShipping,
-    error:       shippingError,
     retry:       retryShipping,
-    totals, coupon: appliedCoupon, couponError, couponPending, applyCoupon, removeCoupon,
-  } = useCheckoutQuote(items, shipping);
+    totals, coupon: appliedCoupon,
+  } = quote;
 
   const [notes,          setNotes]          = useState("");
-  const [showNotes,      setShowNotes]      = useState(false);
   const [paymentReady,   setPaymentReady]   = useState(false);
   const [stripeError,    setStripeError]    = useState("");
   const [cardProcessing, setCardProcessing] = useState(false);
 
-  const [couponInput,   setCouponInput]   = useState("");
-
   const stripeRef = useRef<StripeHandle>(null);
 
-  const subtotal       = totals?.subtotal ?? parseFloat(items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2));
-  const discountAmount = totals?.discount ?? 0;
   const total          = totals?.total ?? 0;
 
 
-  const effectiveBilling = sameAsBilling ? shipping : billing;
-  const shipStr = serializeAddress(shipping);
-  const billStr = serializeAddress(effectiveBilling);
+  const shipStr = serializeAddress(shipTo);
+  const billStr = serializeAddress(billing);
 
   // What the server prices and places. The only amount is the total shown,
   // so the server can refuse to charge anything different.
@@ -223,7 +219,7 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
     couponCode:      appliedCoupon?.code ?? null,
     notes,
     customerEmail:   email,
-    customerPhone:   shipping.phone,
+    customerPhone:   billing.phone,
     expectedTotal:   totals.total,
   }) : null;
 
@@ -251,14 +247,9 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleApplyCoupon = () => {
-    if (!couponInput.trim()) return;
-    applyCoupon(couponInput);
-    setCouponInput("");
-  };
-
   const handlePlaceOrder = () => {
-    if (!hasAddr(shipping)) { toast.error("Please enter a shipping address."); return; }
+    if (!hasAddr(billing)) { toast.error("Please enter the billing address."); return; }
+    if (!hasAddr(shipTo)) { toast.error("Please enter the shipping address."); return; }
     if (!selectedShipping) {
       toast.error(loadingShipping ? "Shipping rates are still loading." : shippingOptions.length > 0 ? "Please select a shipping method." : "Shipping is not available for this address.");
       return;
@@ -291,95 +282,63 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
       <h1 className="text-2xl font-semibold text-gray-900 mb-2">Checkout</h1>
       <div className="h-0.5 bg-gray-900 mb-6" />
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
+      {/* Laid out like the WooCommerce checkout: billing / shipping / notes on
+          the left, "Your order" with payment and Place Order on the right */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
 
         {/* LEFT */}
-        <div className="lg:col-span-3 space-y-8">
+        <div className="space-y-8">
 
-          {/* Contact */}
+          {/* Billing details */}
           <section>
-            <h2 className="text-base font-semibold text-gray-800 mb-3">Patient contact information</h2>
-            <div className="border border-gray-300 rounded px-4 py-3 space-y-3">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Billing details</h2>
+            <AddressFields value={billing} onChange={setBilling} variant="woo">
               <div>
-                <label className="text-xs text-gray-400 mb-0.5 block">Patient&apos;s Email Address</label>
+                <label className="block text-sm font-medium text-gray-800 mb-1">
+                  Patient&apos;s Email address <span className="text-gray-400 font-normal">(for order confirmation)</span>
+                </label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter patient's email (for order confirmation)"
-                  className="text-sm text-gray-800 w-full outline-none bg-transparent placeholder:text-gray-300"
+                  autoComplete="off"
+                  className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
                 />
               </div>
-            </div>
+            </AddressFields>
           </section>
 
-          {/* Shipping address */}
+          {/* Ship to a different address? */}
           <section>
-            <h2 className="text-base font-semibold text-gray-800 mb-3">Shipping address</h2>
-            <div className="border border-gray-300 rounded p-4">
-              <AddressFields value={shipping} onChange={setShipping} />
-            </div>
-
-            <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-              <input type="checkbox" checked={sameAsBilling}
-                onChange={(e) => { setSameAsBilling(e.target.checked); if (!e.target.checked && !hasAddr(billing)) setBilling({ ...shipping }); }}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={shipToDifferent}
+                onChange={(e) => { setShipToDifferent(e.target.checked); if (e.target.checked && !hasAddr(shipping)) setShipping({ ...billing }); }}
                 className="w-4 h-4 rounded border-gray-300 accent-gray-900" />
-              <span className="text-sm text-gray-700">Use same address for billing</span>
+              <span className="text-xl font-semibold text-gray-900">Ship to a different address?</span>
             </label>
-
-            {!sameAsBilling && (
+            {shipToDifferent && (
               <div className="mt-4">
-                <p className="text-sm font-semibold text-gray-700 mb-2">Billing address</p>
-                <div className="border border-gray-300 rounded p-4">
-                  <AddressFields value={billing} onChange={setBilling} />
-                </div>
+                <AddressFields value={shipping} onChange={setShipping} variant="woo" />
               </div>
             )}
           </section>
 
-          {/* Shipping method */}
-          {shipping.country && (
-            <section>
-              <h2 className="text-base font-semibold text-gray-800 mb-3">Shipping method</h2>
-              {loadingShipping ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-gray-400 border border-gray-200 rounded px-4">
-                  <span className="w-4 h-4 border-2 border-gray-200 border-t-[#3DBFA4] rounded-full animate-spin" />
-                  Loading shipping options…
-                </div>
-              ) : shippingError ? (
-                <div className="flex items-center justify-between gap-3 border border-red-200 bg-red-50 rounded px-4 py-3 text-sm text-red-700">
-                  <span>{shippingError}</span>
-                  <button type="button" onClick={retryShipping} className="shrink-0 font-semibold underline hover:no-underline">
-                    Try again
-                  </button>
-                </div>
-              ) : shippingOptions.length === 0 ? (
-                <div className="border border-amber-200 bg-amber-50 rounded px-4 py-3 text-sm text-amber-700">
-                  No shipping available to this address{shipping.countryName ? ` in ${shipping.countryName}` : ""}. Please contact us.
-                </div>
-              ) : (
-                <div className="border border-gray-300 rounded divide-y divide-gray-100">
-                  {shippingOptions.map((opt) => (
-                    <label key={opt.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors">
-                      <input
-                        type="radio"
-                        name="shippingMethod"
-                        checked={selectedShipping?.id === opt.id}
-                        onChange={() => setSelectedShipping(opt)}
-                        className="accent-gray-900"
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-800">{opt.label}</p>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-800">
-                        {opt.cost === 0 ? <span className="text-emerald-600">Free</span> : formatCurrency(opt.cost)}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
+          {/* Additional information */}
+          <section>
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Additional information</h2>
+            <label className="block text-sm font-medium text-gray-800 mb-1">
+              Order notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notes about your order, e.g. special notes for delivery."
+              className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none placeholder:text-gray-400" />
+          </section>
+        </div>
+
+        {/* RIGHT — Your order */}
+        <div className="space-y-6">
+          <h2 className="text-xl font-semibold text-gray-900">Your order</h2>
+          <CheckoutOrderSummary items={items} quote={quote} shipTo={shipTo} />
 
           {/* Payment */}
           <section>
@@ -416,7 +375,7 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
                       ref={stripeRef}
                       physicianId={physicianId}
                       checkout={checkout}
-                      billingAddressData={effectiveBilling}
+                      billingAddressData={billing}
                       total={total}
                       customerEmail={email || undefined}
                       onSuccess={handleCardSuccess}
@@ -432,50 +391,8 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
             </div>
           </section>
 
-          {/* Coupon */}
-          <div>
-            <h2 className="text-base font-semibold text-gray-800 mb-3">Coupon code</h2>
-            {appliedCoupon ? (
-              <div className="flex items-center justify-between border border-emerald-200 bg-emerald-50 rounded px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-emerald-700">{appliedCoupon.code}</p>
-                  <p className="text-xs text-emerald-600">−{formatCurrency(appliedCoupon.discount)} discount applied</p>
-                </div>
-                <button type="button" onClick={removeCoupon} className="text-xs text-red-500 hover:underline">Remove</button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="text" value={couponInput} onChange={(e) => setCouponInput(e.target.value)}
-                  placeholder="Enter coupon code"
-                  className="flex-1 px-3 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900"
-                  onKeyDown={(e) => { if (e.key === "Enter") handleApplyCoupon(); }}
-                />
-                <button type="button" onClick={handleApplyCoupon} disabled={couponPending || !couponInput.trim()}
-                  className="px-4 py-2.5 bg-gray-800 text-white text-sm font-medium rounded hover:bg-gray-700 disabled:opacity-50 transition-colors">
-                  {couponPending ? "…" : "Apply"}
-                </button>
-              </div>
-            )}
-            {couponError && <p className="mt-1.5 text-xs text-red-500">{couponError}</p>}
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={showNotes} onChange={(e) => setShowNotes(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 accent-gray-900" />
-              <span className="text-sm text-gray-700">Add a note to this order</span>
-            </label>
-            {showNotes && (
-              <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder="Special instructions or notes…"
-                className="mt-3 w-full px-3 py-2.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none" />
-            )}
-          </div>
-
           <button type="button" onClick={handlePlaceOrder}
-            disabled={cardProcessing || !hasAddr(shipping) || !selectedShipping || !checkout}
+            disabled={cardProcessing || !hasAddr(billing) || !hasAddr(shipTo) || !selectedShipping || !checkout}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-bold rounded transition-colors">
             {cardProcessing ? (
               <span className="flex items-center justify-center gap-2">
@@ -484,76 +401,6 @@ export function BehalfCheckoutClient({ physicianId, physicianName, physicianEmai
               </span>
             ) : "Place Order"}
           </button>
-        </div>
-
-        {/* RIGHT — Order summary */}
-        <div className="lg:col-span-2">
-          <div className="sticky top-24 space-y-4">
-            <div className="border border-gray-200 rounded overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200">
-                <h2 className="text-sm font-semibold text-gray-800">Order summary</h2>
-              </div>
-              <div className="px-4 py-4 space-y-4 border-b border-gray-200">
-                {items.map((item) => (
-                  <div key={item.cartId} className="flex gap-3 items-start">
-                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-50 border border-gray-100 shrink-0">
-                      {item.productImage
-                        ? <img src={item.productImage} alt={item.productTitle} className="w-full h-full object-cover" />
-                        : <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-5 h-5 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                      }
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 leading-snug line-clamp-2">{item.productTitle}</p>
-                      {item.variantSize && <p className="text-xs text-gray-500 mt-0.5">{item.variantSize}</p>}
-                      <p className="text-xs text-gray-400">Qty: {item.quantity}</p>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-800 shrink-0">{formatCurrency(item.unitPrice * item.quantity)}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="px-4 py-3 space-y-2 text-sm text-gray-600">
-                <div className="flex justify-between">
-                  <span>Subtotal</span><span>{formatCurrency(subtotal)}</span>
-                </div>
-                {discountAmount > 0 && (
-                  <div className="flex justify-between text-emerald-600">
-                    <span>Discount ({appliedCoupon?.code})</span><span>−{formatCurrency(discountAmount)}</span>
-                  </div>
-                )}
-                {!!totals?.tax && (
-                  <div className="flex justify-between">
-                    <span>Tax</span><span>{formatCurrency(totals.tax)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span>{selectedShipping?.label ?? "Shipping"}</span>
-                  {loadingShipping ? (
-                    <span className="text-gray-400 italic text-xs">Calculating…</span>
-                  ) : selectedShipping ? (
-                    <span className={selectedShipping.cost === 0 ? "text-emerald-600 font-medium" : ""}>
-                      {selectedShipping.cost === 0 ? "Free" : formatCurrency(selectedShipping.cost)}
-                    </span>
-                  ) : !shipping.country ? (
-                    <span className="italic text-xs text-gray-400">Enter address first</span>
-                  ) : (
-                    <span className="italic text-xs text-amber-600">Not available</span>
-                  )}
-                </div>
-                <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t border-gray-100">
-                  <span>Total</span>
-                  {totals ? (
-                    <span>{formatCurrency(total)}</span>
-                  ) : (
-                    <span className="text-gray-400 italic text-xs font-normal">Calculating…</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

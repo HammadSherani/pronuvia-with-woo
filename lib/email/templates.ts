@@ -637,6 +637,7 @@ function renderAddr(raw: string | null | undefined): string {
     const a = JSON.parse(raw);
     return [
       [a.firstName, a.lastName].filter(Boolean).join(" "),
+      a.company,
       a.address1, a.address2,
       [a.city, a.state, a.zip].filter(Boolean).join(", "),
       a.country, a.phone,

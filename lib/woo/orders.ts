@@ -7,7 +7,7 @@ import type { WooMeta } from "./types";
 // "processing", reduces stock and counts the coupon use.
 
 export type WooOrderAddress = {
-  first_name: string; last_name: string; address_1: string; address_2: string;
+  first_name: string; last_name: string; company?: string; address_1: string; address_2: string;
   city: string; state: string; postcode: string; country: string; phone: string;
 };
 
