@@ -225,7 +225,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
           </Link>
           <div className="flex items-center gap-2">
             <a
-              href={`/admin/orders/${id}/packing-list`}
+              href={`/api/admin/orders/${id}/pdf/packing-slip`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-sm font-medium text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
@@ -233,10 +233,10 @@ export default async function AdminOrderDetailPage({ params }: Props) {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              Packing List
+              Packing Slip
             </a>
             <a
-              href={`/admin/orders/${id}/invoice`}
+              href={`/api/admin/orders/${id}/pdf/invoice`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-sm font-medium text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
