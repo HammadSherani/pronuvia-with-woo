@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { logout } from "@/actions/auth/logout";
 import type { Role } from "@/generated/prisma/enums";
 import { useCart } from "@/lib/cart/cart-context";
+import { NavDot } from "./admin-badges";
 
 type SubNavItem =
   | { label: string; href: string; action?: never; isCart?: boolean }
@@ -78,6 +79,7 @@ export function SubHeader({ role }: { role: Role }) {
               }`}
             >
               {item.label}
+              <NavDot href={item.href} />
               {item.isCart && totalItems > 0 && (
                 <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-gray-900 text-white rounded-full leading-none">
                   {totalItems > 9 ? "9+" : totalItems}

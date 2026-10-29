@@ -7,6 +7,7 @@ import { useCart } from "@/lib/cart/cart-context";
 import type { Role } from "@/generated/prisma/enums";
 import { logout } from "@/actions/auth/logout";
 import { wpAdmin } from "@/lib/woo/admin-links";
+import { AnyNavDot, NavDot } from "./admin-badges";
 
 function CartIcon({ href }: { href: string }) {
   const { totalItems } = useCart();
@@ -139,6 +140,7 @@ function DropdownMenu({ item }: { item: NavItem & { children: NavChild[] } }) {
         className="flex items-center gap-1 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors cursor-pointer"
       >
         {item.label}
+        <AnyNavDot hrefs={item.children.map((c) => c.href)} className="ml-0.5" />
 
         <svg
           className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""
@@ -176,9 +178,10 @@ function DropdownMenu({ item }: { item: NavItem & { children: NavChild[] } }) {
                 key={child.href}
                 href={child.href}
                 onClick={() => setOpen(false)}
-                className="block px-4 py-2.5 text-sm text-[#6b7280] hover:bg-gray-50 hover:text-[#374151] transition-colors"
+                className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm text-[#6b7280] hover:bg-gray-50 hover:text-[#374151] transition-colors"
               >
                 {child.label}
+                <NavDot href={child.href} />
               </Link>
             )
           )}
@@ -206,9 +209,10 @@ export function MainHeader({ role }: { role: Role }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className="text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors whitespace-nowrap"
               >
                 {item.label}
+                <NavDot href={item.href} />
               </Link>
             )
           )}

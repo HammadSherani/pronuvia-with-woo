@@ -1,4 +1,5 @@
 import { requireAdmin }     from "@/lib/auth/dal";
+import { markAdminNavSeen } from "@/lib/admin/nav-badges";
 import { prisma }           from "@/lib/db/prisma";
 import { PageHeader }       from "@/components/admin/page-header";
 import { CommissionPayoutClient } from "@/components/admin/commission-payout-client";
@@ -8,7 +9,8 @@ import { wpAdmin } from "@/lib/woo/admin-links";
 export const metadata = { title: "Commission Payout – Pronuvia Admin" };
 
 export default async function CommissionPayoutPage() {
-  await requireAdmin();
+  const session = await requireAdmin();
+  await markAdminNavSeen(session.userId, "payouts");
 
   // ── Current (still-open) commission period bounds ──────────────────────────
   // Same PAYOUT_TIMEZONE-aware boundary the monthly sweep/cron use, so this

@@ -1,4 +1,6 @@
 import { listOrders }           from "@/actions/admin/manage-orders";
+import { requireAdmin }         from "@/lib/auth/dal";
+import { markAdminNavSeen }     from "@/lib/admin/nav-badges";
 import { OrdersTableClient }   from "@/components/admin/orders-table-client";
 import { OrderStatusFilter }   from "@/components/admin/order-status-filter";
 import { OrderSearchInput }    from "@/components/admin/order-search-input";
@@ -28,6 +30,8 @@ export default async function OrdersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const session = await requireAdmin();
+  await markAdminNavSeen(session.userId, "orders");   // its red dot goes
   const sp = await searchParams;
   const { page, pageSize, skip, take } = parsePagination(sp);
   const status = typeof sp.status === "string" && sp.status ? sp.status : undefined;

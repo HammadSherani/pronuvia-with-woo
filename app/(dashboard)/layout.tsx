@@ -6,6 +6,7 @@ import { SubHeader }         from "@/components/dashboard/sub-header";
 import { CartProviderWrapper } from "@/components/cart-provider-wrapper";
 import { BankNotifyGate }    from "@/components/dashboard/bank-notify-gate";
 import { HideStripeBadge }   from "@/components/shared/hide-stripe-badge";
+import { AdminBadgesProvider } from "@/components/dashboard/admin-badges";
 
 export default async function DashboardLayout({
   children,
@@ -40,8 +41,10 @@ export default async function DashboardLayout({
     <CartProviderWrapper userId={session.userId}>
       <div className="min-h-screen flex flex-col bg-[#f9fafb]">
         <HideStripeBadge />
-        <MainHeader role={session.role} />
-        <SubHeader role={session.role} />
+        <AdminBadgesProvider enabled={session.role === "ADMIN"}>
+          <MainHeader role={session.role} />
+          <SubHeader role={session.role} />
+        </AdminBadgesProvider>
         <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
           {children}
         </main>

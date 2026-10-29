@@ -1,4 +1,6 @@
 import { getEmailLogs } from "@/actions/admin/email-logs";
+import { requireAdmin } from "@/lib/auth/dal";
+import { markAdminNavSeen } from "@/lib/admin/nav-badges";
 import { PageHeader } from "@/components/admin/page-header";
 import { Pagination } from "@/components/shared/pagination";
 import { parsePagination } from "@/lib/pagination";
@@ -21,6 +23,8 @@ export default async function EmailLogsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const session = await requireAdmin();
+  await markAdminNavSeen(session.userId, "emailLogs");   // its red dot goes
   const sp = await searchParams;
   const { page, pageSize, skip, take } = parsePagination(sp, 25);
   const status = typeof sp.status === "string" && sp.status ? (sp.status as EmailLogStatus) : undefined;
