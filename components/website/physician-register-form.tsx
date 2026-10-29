@@ -110,7 +110,7 @@ export function PhysicianRegisterForm() {
 
   if (state?.success) {
     return (
-      <div className="py-16 text-center">
+      <div className="py-16 text-center" data-registered>
         <div className="w-20 h-20 rounded-full bg-[#1b3b6f]/10 flex items-center justify-center mx-auto mb-6">
           <svg className="w-10 h-10 text-[#1b3b6f]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />

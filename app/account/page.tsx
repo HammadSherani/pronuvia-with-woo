@@ -153,7 +153,7 @@ export default async function AccountPage() {
     <>
       <SiteHeader variant="solid" />
       <main className="bg-gray-50 py-14 px-6">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto group">
           <div className="text-center mb-10">
             {/* <p className="text-xs font-semibold tracking-[0.3em] text-[#3DBFA4] uppercase mb-3">
               Physician Program
@@ -164,7 +164,8 @@ export default async function AccountPage() {
             >
               Partner Program Application
             </h1>
-            <p className="text-sm text-gray-500 max-w-lg mx-auto leading-relaxed">
+            {/* Hidden once the form is submitted (its success message is shown) */}
+            <p className="text-sm text-gray-500 max-w-lg mx-auto leading-relaxed group-has-[[data-registered]]:hidden">
               Complete the form below to apply. Our team will review your application
               and notify you once your account is approved.
             </p>
