@@ -1,4 +1,5 @@
 import "server-only";
+import { wooPlainText } from "./text";
 import { wooFetch, WooError } from "./client";
 
 // Cart totals come from WooCommerce itself: the items go into a fresh guest
@@ -83,15 +84,7 @@ const BATCH_LIMIT = 25;
 const money = (minor: string | null | undefined, unit: number) => Number(minor ?? 0) / 10 ** unit;
 
 // Woo messages carry HTML entities ("&#036;100.00") and sometimes tags
-function plain(message: string | undefined): string {
-  return (message ?? "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&")
-    .trim();
-}
+const plain = wooPlainText;
 
 // Our address form uses country-state-city codes. Woo agrees for the US and
 // Canada ("NY", "ON") but prefixes some countries ("BE" → "DE-BE") and has no

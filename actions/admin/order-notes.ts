@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { requireAdmin } from "@/lib/auth/dal";
 import { getWooOrderNotes } from "@/lib/woo/orders";
+import { wooPlainText } from "@/lib/woo/text";
 
 // Notes of orders that are in WooCommerce are Woo order notes (ids "woo:123"),
 // including the ones Woo writes itself (stock, status changes). Older orders
@@ -33,7 +34,7 @@ export async function getOrderNotes(orderId: string): Promise<OrderNoteRow[]> {
     const rows: OrderNoteRow[] = woo.map((n) => ({
       id:        `${WOO_PREFIX}${n.id}`,
       type:      n.customer_note ? "customer" : "private",
-      content:   n.note.replace(/<[^>]*>/g, ""),
+      content:   wooPlainText(n.note),
       createdAt: new Date(`${n.date_created_gmt}Z`),
     }));
     return [...local, ...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
