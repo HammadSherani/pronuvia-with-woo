@@ -4,14 +4,15 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 import { getSalesRepOrdersForExport } from "@/actions/sales-rep/export-orders";
 import { toDateInputValue } from "@/lib/utils/timezone";
+import type { OrdersRange } from "@/lib/orders/date-range";
 
-export function SalesDownloadOrdersButton() {
+export function SalesDownloadOrdersButton(filter: { range: OrdersRange; from: string; to: string }) {
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
     setLoading(true);
     try {
-      const rows = await getSalesRepOrdersForExport();
+      const rows = await getSalesRepOrdersForExport(filter);
 
       const sheetData = [
         [

@@ -7,6 +7,8 @@ import { parsePagination } from "@/lib/pagination";
 import { Suspense } from "react";
 import { SalesDownloadOrdersButton } from "@/components/sales/download-orders-button";
 import { formatDate } from "@/lib/utils/timezone";
+import { parseOrdersRange } from "@/lib/orders/date-range";
+import { OrdersDateFilter } from "@/components/shared/orders-date-filter";
 
 export const metadata = { title: "Order – Pronuvia" };
 
@@ -39,7 +41,8 @@ export default async function SalesOrdersPage({
   const sp = await searchParams;
   const { page, pageSize, skip, take } = parsePagination(sp);
 
-  const where = { salesRepId: session.userId };
+  const dr = parseOrdersRange(sp);
+  const where = { salesRepId: session.userId, ...(dr.createdAt && { createdAt: dr.createdAt }) };
   const select = {
     id: true, orderNumber: true, createdAt: true,
     items: true, subtotal: true, total: true,
@@ -58,7 +61,7 @@ export default async function SalesOrdersPage({
     prisma.order.count({ where }),
   ]);
 
-  // Stats from all orders (not paged)
+  // Stats from all orders in the period (not paged)
   const [totalSpent, totalCommission, paidCount] = await Promise.all([
     // After refunds: what was kept and the commission left after clawbacks
     prisma.order.aggregate({ where, _sum: { total: true, returnedTotal: true } })
@@ -77,7 +80,7 @@ export default async function SalesOrdersPage({
           <p className="text-sm text-gray-500 mt-0.5">All orders you have placed</p>
         </div>
         <div className="flex items-center gap-2">
-          <SalesDownloadOrdersButton />
+          <SalesDownloadOrdersButton range={dr.range} from={dr.from} to={dr.to} />
           <Link
             href="/sales/shop"
             className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors shadow-sm"
@@ -88,6 +91,13 @@ export default async function SalesOrdersPage({
             New Order
           </Link>
         </div>
+      </div>
+
+      {/* Date filter: the cards, table and download follow it */}
+      <div className="mb-4">
+        <Suspense>
+          <OrdersDateFilter range={dr.range} from={dr.from} to={dr.to} />
+        </Suspense>
       </div>
 
       {/* Summary cards */}
@@ -107,7 +117,12 @@ export default async function SalesOrdersPage({
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        {total === 0 ? (
+        {total === 0 && dr.createdAt ? (
+          <div className="py-16 text-center">
+            <p className="text-sm font-semibold text-gray-600 mb-1">No orders in this period</p>
+            <p className="text-xs text-gray-400">Pick another date range, or All.</p>
+          </div>
+        ) : total === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
               <svg className="w-7 h-7 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">

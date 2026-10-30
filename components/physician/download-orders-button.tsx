@@ -4,14 +4,15 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 import { getPhysicianOrdersForExport } from "@/actions/physician/export-orders";
 import { toDateInputValue } from "@/lib/utils/timezone";
+import type { OrdersRange } from "@/lib/orders/date-range";
 
-export function DownloadOrdersButton() {
+export function DownloadOrdersButton(filter: { range: OrdersRange; from: string; to: string }) {
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
     setLoading(true);
     try {
-      const rows = await getPhysicianOrdersForExport();
+      const rows = await getPhysicianOrdersForExport(filter);
 
       const sheetData = [
         [

@@ -2,6 +2,7 @@
 
 import { prisma }          from "@/lib/db/prisma";
 import { requireSalesRep } from "@/lib/auth/dal";
+import { parseOrdersRange } from "@/lib/orders/date-range";
 import { formatDate }      from "@/lib/utils/timezone";
 import { addressName, addressOneLine } from "@/lib/addresses/formats";
 
@@ -29,11 +30,13 @@ export type SalesRepOrderExportRow = {
 
 type OrderItem = { title: string; variantSize?: string; quantity: number };
 
-export async function getSalesRepOrdersForExport(): Promise<SalesRepOrderExportRow[]> {
+export async function getSalesRepOrdersForExport(filter?: { range?: string; from?: string; to?: string }): Promise<SalesRepOrderExportRow[]> {
   const session = await requireSalesRep();
 
+  const { createdAt } = parseOrdersRange(filter ?? {});
   const orders = await prisma.order.findMany({
-    where:   { salesRepId: session.userId },
+    // The Orders page's date filter
+    where:   { salesRepId: session.userId, ...(createdAt && { createdAt }) },
     select: {
       orderNumber:              true,
       createdAt:                true,

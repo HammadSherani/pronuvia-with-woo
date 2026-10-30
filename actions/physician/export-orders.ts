@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { requirePhysician } from "@/lib/auth/dal";
+import { parseOrdersRange } from "@/lib/orders/date-range";
 import { formatDate } from "@/lib/utils/timezone";
 import { addressName, addressOneLine } from "@/lib/addresses/formats";
 
@@ -29,11 +30,13 @@ type OrderItem = {
   quantity:    number;
 };
 
-export async function getPhysicianOrdersForExport(): Promise<PhysicianOrderExportRow[]> {
+export async function getPhysicianOrdersForExport(filter?: { range?: string; from?: string; to?: string }): Promise<PhysicianOrderExportRow[]> {
   const session = await requirePhysician();
 
+  const { createdAt } = parseOrdersRange(filter ?? {});
   const orders = await prisma.order.findMany({
-    where:   { physicianId: session.userId },
+    // The Orders page's date filter
+    where:   { physicianId: session.userId, ...(createdAt && { createdAt }) },
     select: {
       orderNumber:     true,
       createdAt:       true,
