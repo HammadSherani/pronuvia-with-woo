@@ -1,3 +1,5 @@
+import path from "node:path";
+import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
 import { formatDate, formatDateLong } from "@/lib/utils/timezone";
 
@@ -43,14 +45,21 @@ export async function generateCommissionStatementPdf(opts: {
 
       // ── Header bar ───────────────────────────────────────────────────────
       doc.rect(0, 0, doc.page.width, 70).fill(navy);
-      doc
-        .fillColor("#ffffff")
-        .fontSize(22).font("Helvetica-Bold")
-        .text("PRONUVIA", 50, 18, { lineBreak: false });
+      // White Pronuvia logo on the bar (the name as text if the file is missing)
+      let logo: Buffer | null = null;
+      try { logo = readFileSync(path.join(process.cwd(), "public/assets/logo-white.png")); } catch { /* text below */ }
+      if (logo) {
+        doc.image(logo, 50, 11, { width: 118 });
+      } else {
+        doc
+          .fillColor("#ffffff")
+          .fontSize(22).font("Helvetica-Bold")
+          .text("PRONUVIA", 50, 18, { lineBreak: false });
+      }
       doc
         .fontSize(9).font("Helvetica")
-        .fillColor("rgba(255,255,255,0.6)")
-        .text("Commission Payout Statement", 50, 46, { lineBreak: false });
+        .fillColor("#c3cfe2")   // light on the navy bar (pdfkit has no rgba)
+        .text("Commission Payout Statement", 50, 48, { lineBreak: false });
 
       // right-align period
       doc

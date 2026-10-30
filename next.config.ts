@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
     // Static PDF attachments read from disk at runtime (approval/welcome
     // emails) — without this they don't exist in the Vercel serverless
     // bundle even though the mailer.ts code that reads them is fine.
-    "/**": ["./generated/prisma/**", "./lib/email/attachments/**", "./public/assets/logo-color.png"],
+    "/**": ["./generated/prisma/**", "./lib/email/attachments/**", "./public/assets/logo-color.png", "./public/assets/logo-white.png"],
   },
   images: {
     // Allow images served from the same origin (public folder uploads)
