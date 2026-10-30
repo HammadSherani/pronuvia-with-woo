@@ -89,7 +89,7 @@ export default async function PhysicianOrdersPage({
       <div className="grid grid-cols-3 gap-5 mb-6">
         {[
           { label: "Total Orders",    value: String(total),       color: "#3DBFA4" },
-          { label: "Total Spent",     value: fmt(totalSpent),     color: "#5BB8D4" },
+          { label: "Total Order Amount", value: fmt(totalSpent),     color: "#5BB8D4" },
           { label: "Your Commission", value: fmt(totalCommission), color: "#8b5cf6" },
         ].map((c) => (
           <div key={c.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
