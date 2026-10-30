@@ -118,7 +118,7 @@ export async function syncOrderToWoo(orderId: string): Promise<SyncResult> {
           pronuvia_customer_email:              order.customerEmail,
           pronuvia_customer_phone:              order.customerPhone,
           // For the Commissions box on the WP order page
-          [NAME_META_KEYS.physician]:           order.physician ? `Dr. ${order.physician.firstName} ${order.physician.lastName}` : undefined,
+          [NAME_META_KEYS.physician]:           order.physician ? `${order.physician.firstName} ${order.physician.lastName}` : undefined,
           [NAME_META_KEYS.sales_rep]:           order.salesRep?.name,
           [REVIEW_META_KEY]:                    JSON.stringify(reviewMetaFor(order)),
         },
