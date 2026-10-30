@@ -583,7 +583,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                                 onClick={() =>
                                   startNotify(async () => {
                                     const res = await notifyUserAddBank(row.userId, row.userRole);
-                                    if (res.success) toast.success("User notified to add bank account");
+                                    if (res.success) toast.success(res.message);
                                     else toast.error(res.message);
                                   })
                                 }

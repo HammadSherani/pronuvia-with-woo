@@ -1579,3 +1579,25 @@ export function commissionPayoutEmail(opts: {
   `);
   return { subject, html };
 }
+
+// ─────────────────────────────────────────────
+// Admin "Notify": add bank details so commission can be paid
+// ─────────────────────────────────────────────
+export function addBankDetailsEmail(opts: { firstName: string; accountPath: string }) {
+  return {
+    subject: "Add your bank details to receive your commission",
+    html: base(`
+      <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:${C.ink};">Add your bank details</h1>
+      <p style="margin:0 0 16px;font-size:15px;color:${C.muted};line-height:1.6;">
+        Hi ${opts.firstName}, you have commission waiting to be paid out, but we don&apos;t have your bank details yet.
+      </p>
+      <p style="margin:0 0 8px;font-size:15px;color:${C.muted};line-height:1.6;">
+        Please log in and add your bank account so we can send your payout.
+      </p>
+      ${btn(`${getAppUrl()}${opts.accountPath}`, "Add Bank Details")}
+      <p style="margin:0;font-size:12px;color:${C.dimmed};text-align:center;">
+        Questions? Just reply to this email.
+      </p>
+    `),
+  };
+}
