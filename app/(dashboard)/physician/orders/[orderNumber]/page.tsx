@@ -16,7 +16,7 @@ export default async function PhysicianOrderDetailPage({ params }: Props) {
       detail={detail}
       viewer="PHYSICIAN"
       backHref="/physician/orders"
-      invoiceHref={`/physician/invoice/${orderNumber}`}
+      invoiceHref={`/api/orders/${orderNumber}/invoice`}
     />
   );
 }

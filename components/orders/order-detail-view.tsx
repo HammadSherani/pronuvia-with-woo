@@ -93,9 +93,10 @@ export function OrderDetailView({ detail, backHref, invoiceHref, viewer }: {
               Partially refunded
             </span>
           )}
-          <Link href={invoiceHref} className="text-xs font-medium text-[#3DBFA4] hover:text-[#35a993] border border-gray-200 rounded-lg px-3 py-1.5">
+          {/* The invoice PDF opens in a new tab (it can be downloaded there) */}
+          <a href={invoiceHref} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#3DBFA4] hover:text-[#35a993] border border-gray-200 rounded-lg px-3 py-1.5">
             Invoice
-          </Link>
+          </a>
         </div>
       </div>
 

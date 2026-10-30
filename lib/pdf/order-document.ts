@@ -196,3 +196,29 @@ export async function generateOrderDocumentPdf(kind: OrderDocKind, order: OrderD
     }
   });
 }
+
+/** The PDF as a response: shown in the browser, or downloaded with ?download=1. */
+export async function orderDocumentResponse(
+  req: Request,
+  kind: OrderDocKind,
+  order: Omit<OrderDocOrder, "items"> & { items: unknown },
+): Promise<Response> {
+  const pdf = await generateOrderDocumentPdf(kind, { ...order, items: order.items as Item[] });
+  const filename = `${kind}-${order.orderNumber}.pdf`;
+  const disposition = new URL(req.url).searchParams.get("download") ? "attachment" : "inline";
+  return new Response(new Uint8Array(pdf), {
+    headers: {
+      "Content-Type":        "application/pdf",
+      "Content-Disposition": `${disposition}; filename="${filename}"`,
+      "Content-Length":      String(pdf.length),
+      "Cache-Control":       "no-store",
+    },
+  });
+}
+
+/** What the PDFs read from an order. */
+export const ORDER_DOC_SELECT = {
+  orderNumber: true, createdAt: true, items: true,
+  billingAddress: true, shippingAddress: true, shippingMethod: true, shippingRate: true,
+  paymentMethod: true, subtotal: true, discountAmount: true, couponCode: true, taxAmount: true, total: true,
+} as const;

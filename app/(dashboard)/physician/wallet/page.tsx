@@ -343,9 +343,9 @@ export default async function PhysicianCommissionPage({ searchParams }: { search
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
             {monthPending.length}
           </span>
-          <span className="text-[11px] text-gray-400">
+          {/* <span className="text-[11px] text-gray-400">
             {isCurrent ? "all commission still awaiting review" : `${period.label} orders still awaiting review`}
-          </span>
+          </span> */}
           {monthPending.length > 0 && (
             <span className="text-xs text-amber-600 font-medium ml-auto">
               {fmt(monthPendingTotal)} pending

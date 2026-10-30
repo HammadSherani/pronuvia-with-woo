@@ -16,7 +16,7 @@ export default async function SalesOrderDetailPage({ params }: Props) {
       detail={detail}
       viewer="SALES_REP"
       backHref="/sales/orders"
-      invoiceHref={`/sales/invoice/${orderNumber}`}
+      invoiceHref={`/api/orders/${orderNumber}/invoice`}
     />
   );
 }
