@@ -4,16 +4,22 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { OrdersRange } from "@/lib/orders/date-range";
 
-const PRESETS: { value: OrdersRange; label: string }[] = [
-  { value: "all",        label: "All" },
-  { value: "today",      label: "Today" },
-  { value: "month",      label: "This month" },
-  { value: "last-month", label: "Last month" },
-  { value: "custom",     label: "Custom" },
-];
+const LABELS: Record<OrdersRange, string> = {
+  "all":        "All",
+  "today":      "Today",
+  "week":       "This week",
+  "month":      "This month",
+  "last-month": "Last month",
+  "6-months":   "Last 6 months",
+  "custom":     "Custom",
+};
+const DEFAULT_PRESETS: OrdersRange[] = ["all", "today", "month", "last-month", "custom"];
 
 /** Orders date filter: presets, or a custom from–to range (kept in the URL). */
-export function OrdersDateFilter({ range, from, to }: { range: OrdersRange; from: string; to: string }) {
+export function OrdersDateFilter({ range, from, to, presets = DEFAULT_PRESETS }: {
+  range: OrdersRange; from: string; to: string;
+  presets?: OrdersRange[];
+}) {
   const router   = useRouter();
   const pathname = usePathname();
   const sp       = useSearchParams();
@@ -34,20 +40,20 @@ export function OrdersDateFilter({ range, from, to }: { range: OrdersRange; from
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="inline-flex flex-wrap bg-white border border-gray-200 rounded-xl p-1 shadow-sm">
-        {PRESETS.map((p) => (
+        {presets.map((value) => (
           <button
-            key={p.value}
+            key={value}
             type="button"
             onClick={() => {
-              if (p.value === "custom") { setCustom(true); return; }
+              if (value === "custom") { setCustom(true); return; }
               setCustom(false);
-              go(p.value === "all" ? {} : { range: p.value });
+              go(value === "all" ? {} : { range: value });
             }}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              active === p.value ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"
+              active === value ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-50"
             }`}
           >
-            {p.label}
+            {LABELS[value]}
           </button>
         ))}
       </div>
