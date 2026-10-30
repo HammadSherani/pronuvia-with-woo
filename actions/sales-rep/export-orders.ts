@@ -3,6 +3,7 @@
 import { prisma }          from "@/lib/db/prisma";
 import { requireSalesRep } from "@/lib/auth/dal";
 import { formatDate }      from "@/lib/utils/timezone";
+import { addressName, addressOneLine } from "@/lib/addresses/formats";
 
 export type SalesRepOrderExportRow = {
   orderNumber:     string;
@@ -27,14 +28,6 @@ export type SalesRepOrderExportRow = {
 };
 
 type OrderItem = { title: string; variantSize?: string; quantity: number };
-
-function parseName(raw: string | null): string {
-  if (!raw) return "";
-  try {
-    const a = JSON.parse(raw) as { firstName?: string; lastName?: string };
-    return [a.firstName, a.lastName].filter(Boolean).join(" ");
-  } catch { return raw.split("\n")[0]?.trim() ?? ""; }
-}
 
 export async function getSalesRepOrdersForExport(): Promise<SalesRepOrderExportRow[]> {
   const session = await requireSalesRep();
@@ -67,8 +60,8 @@ export async function getSalesRepOrdersForExport(): Promise<SalesRepOrderExportR
       .map((i) => `${i.title}${i.variantSize ? ` (${i.variantSize})` : ""} × ${i.quantity}`)
       .join("; ");
 
-    const billingName    = parseName(o.billingAddress);
-    const shippingName   = parseName(o.shippingAddress);
+    const billingName    = addressName(o.billingAddress);
+    const shippingName   = addressName(o.shippingAddress);
     const doctorName     = o.physician
       ? `${o.physician.firstName} ${o.physician.lastName}`
       : "";
@@ -82,9 +75,9 @@ export async function getSalesRepOrdersForExport(): Promise<SalesRepOrderExportR
       paymentStatus:   o.paymentStatus ?? "",
       paymentMethod:   o.paymentMethod ?? "",
       billingName,
-      billingAddress:  o.billingAddress  ?? "",
+      billingAddress:  addressOneLine(o.billingAddress),
       shippingName,
-      shippingAddress: o.shippingAddress ?? "",
+      shippingAddress: addressOneLine(o.shippingAddress),
       items:           itemList,
       subtotal:        o.subtotal,
       shippingCost:    o.shippingRate,

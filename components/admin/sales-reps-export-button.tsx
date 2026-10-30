@@ -4,6 +4,7 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 import { getAllSalesRepsForExport } from "@/actions/admin/manage-sales-reps";
 import { formatDate, toDateInputValue } from "@/lib/utils/timezone";
+import { addressOneLine } from "@/lib/addresses/formats";
 
 export function SalesRepsExportButton() {
   const [loading, setLoading] = useState(false);
@@ -21,8 +22,8 @@ export function SalesRepsExportButton() {
         "Commission (%)":      r.commission,
         "Total Orders":        r.ordersCount,
         "Wallet Balance ($)":  r.walletBalance,
-        "Billing Address":     r.billingAddress ?? "",
-        "Shipping Address":    r.shippingAddress ?? "",
+        "Billing Address":     addressOneLine(r.billingAddress),
+        "Shipping Address":    addressOneLine(r.shippingAddress),
         "Bank Name":           r.bankName ?? "",
         "Bank Account #":      r.bankAccountNumber ?? "",
         "Bank Account Name":   r.bankAccountName ?? "",

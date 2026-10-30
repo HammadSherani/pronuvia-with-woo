@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { requirePhysician } from "@/lib/auth/dal";
 import { formatDate } from "@/lib/utils/timezone";
+import { addressName, addressOneLine } from "@/lib/addresses/formats";
 
 export type PhysicianOrderExportRow = {
   orderNumber:     string;
@@ -27,10 +28,6 @@ type OrderItem = {
   variantSize: string;
   quantity:    number;
 };
-
-function firstLine(text: string): string {
-  return text.split("\n")[0]?.trim() ?? "";
-}
 
 export async function getPhysicianOrdersForExport(): Promise<PhysicianOrderExportRow[]> {
   const session = await requirePhysician();
@@ -64,10 +61,8 @@ export async function getPhysicianOrdersForExport(): Promise<PhysicianOrderExpor
       .join("; ");
 
     // Billing: use what was entered at checkout; fall back to physician name if missing
-    const billingAddr = o.billingAddress ?? "";
-    const billingName = billingAddr
-      ? firstLine(billingAddr)
-      : `${o.physician?.firstName ?? ""} ${o.physician?.lastName ?? ""}`.trim();
+    const billingName = addressName(o.billingAddress)
+      || `${o.physician?.firstName ?? ""} ${o.physician?.lastName ?? ""}`.trim();
 
     return {
       orderNumber:     o.orderNumber,
@@ -76,9 +71,9 @@ export async function getPhysicianOrdersForExport(): Promise<PhysicianOrderExpor
       paymentStatus:   o.paymentStatus ?? "",
       paymentMethod:   o.paymentMethod ?? "",
       billingName,
-      billingAddress:  billingAddr,
-      shippingName:    firstLine(o.shippingAddress ?? ""),
-      shippingAddress: o.shippingAddress ?? "",
+      billingAddress:  addressOneLine(o.billingAddress),
+      shippingName:    addressName(o.shippingAddress),
+      shippingAddress: addressOneLine(o.shippingAddress),
       items:           itemList,
       subtotal:        o.subtotal,
       shippingCost:    o.shippingRate,

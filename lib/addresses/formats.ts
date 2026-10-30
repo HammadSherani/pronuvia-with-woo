@@ -49,3 +49,21 @@ export function formatAddressLines(raw: string | null | undefined): string {
   const a = toLineAddress(raw);
   return [a.line1, a.line2, [a.city, a.state, a.zipCode].filter(Boolean).join(", "), a.country].filter(Boolean).join("\n");
 }
+
+/** The name on an address (checkout addresses have one), for exports. */
+export function addressName(raw: string | null | undefined): string {
+  const { shape, j, text } = parse(raw);
+  if (shape === "address1") return [s(j.firstName), s(j.lastName)].filter(Boolean).join(" ");
+  if (shape === "text") return text.split("\n")[0]?.trim() ?? "";
+  return "";
+}
+
+/** The address on one line ("Company, street, city, state zip, country"), for exports. */
+export function addressOneLine(raw: string | null | undefined): string {
+  const { shape, j, text } = parse(raw);
+  if (shape === "empty") return "";
+  if (shape === "text") return text.split("\n").map((l) => l.trim()).filter(Boolean).join(", ");
+  const a = toLineAddress(raw);
+  const company = shape === "address1" ? s(j.company) : "";
+  return [company, a.line1, a.line2, a.city, [a.state, a.zipCode].filter(Boolean).join(" "), a.country].filter(Boolean).join(", ");
+}
