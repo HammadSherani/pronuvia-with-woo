@@ -2,17 +2,20 @@
 /**
  * Plugin Name: Pronuvia Data Inspector
  * Description: Read-only. Lets Pronuvia's developer read this site's data (plugins, users, orders, database tables) with a secret key, to plan the move to the new Pronuvia portal. Changes nothing. Deactivate and delete it when the check is done.
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
  * Only reads (SELECTs and WordPress / WooCommerce getters); nothing is ever
  * written, apart from the plugin's own key. The data is served at
- * /wp-json/pronuvia-inspect/v1/{summary|table|users|orders} to whoever sends
+ * /wp-json/pronuvia-inspect/v1/{summary|table|users|orders|passwords} to whoever sends
  * the key (header X-Pronuvia-Inspect, or ?key=). The key is made on
  * activation, shown under Tools → Pronuvia Data Inspector, and deleted on
- * deactivation. Passwords, tokens, API keys and card data are never sent
- * (shown as [redacted]); the API key and session tables are not served at all.
+ * deactivation. Tokens, API keys and card data are never sent (shown as
+ * [redacted]); the API key and session tables are not served at all. Password
+ * hashes are sent only by `passwords`, only for doctors, reps and accounts
+ * with no role (never an admin), so they can keep their password on the new
+ * portal.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -56,7 +59,7 @@ function pronuvia_inspect_page() {
 
 add_action( 'rest_api_init', 'pronuvia_inspect_routes' );
 function pronuvia_inspect_routes() {
-	foreach ( array( 'summary', 'table', 'users', 'orders' ) as $what ) {
+	foreach ( array( 'summary', 'table', 'users', 'orders', 'passwords' ) as $what ) {
 		register_rest_route(
 			'pronuvia-inspect/v1',
 			'/' . $what,
@@ -263,6 +266,30 @@ function pronuvia_inspect_users( $request ) {
 		);
 	}
 	return array( 'total' => (int) $query->get_total(), 'page' => $page, 'users' => $users );
+}
+
+// ── passwords: the doctors' / reps' password hashes, so they keep their password ──
+
+/**
+ * Only doctors, reps and accounts with no role: never an admin or anyone
+ * else. The hash is what WordPress stores (phpass or bcrypt), never the
+ * password itself.
+ */
+function pronuvia_inspect_passwords() {
+	global $wpdb;
+	$out = array();
+	foreach ( get_users( array( 'fields' => 'all', 'number' => -1 ) ) as $u ) {
+		$roles = array_values( (array) $u->roles );
+		$ok    = empty( $roles ) || ! array_diff( $roles, array( 'mlm_doctor', 'mlm_medial_rep' ) );
+		if ( ! $ok || user_can( $u, 'manage_options' ) ) {
+			continue;
+		}
+		$out[] = array(
+			'id'   => $u->ID,
+			'hash' => (string) $wpdb->get_var( $wpdb->prepare( "SELECT user_pass FROM {$wpdb->users} WHERE ID = %d", $u->ID ) ),
+		);
+	}
+	return array( 'total' => count( $out ), 'users' => $out );
 }
 
 // ── orders: each order with items, refunds and all its meta ──

@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
-import { verifyPassword } from "@/lib/auth/password";
+import { hashPassword, needsRehash, verifyPassword } from "@/lib/auth/password";
 import { z } from "zod";
 import { createSession } from "@/lib/auth/session";
 import { LoginSchema } from "@/lib/validations/auth";
@@ -28,6 +28,19 @@ const DASHBOARD_ROUTES: Record<Role, string> = {
   [Role.SALES_REP]: "/sales/shop",
   [Role.PHYSICIAN]: "/physician/shop",
 };
+
+// A password still in the old WordPress site's form is saved again in ours
+// (best effort: the login goes on either way)
+async function upgradePassword(role: "SALES_REP" | "PHYSICIAN", id: string, hashed: string, plain: string) {
+  if (!needsRehash(hashed)) return;
+  try {
+    const password = await hashPassword(plain);
+    if (role === "SALES_REP") await prisma.salesRepresentative.update({ where: { id }, data: { password } });
+    else await prisma.partneringPhysician.update({ where: { id }, data: { password } });
+  } catch (e) {
+    console.error("[login] password upgrade failed:", e);
+  }
+}
 
 // Back to the page the user was sent to log in from (e.g. an order link in an
 // email), when it is inside their own area; else their dashboard
@@ -70,6 +83,7 @@ export async function login(
     if (salesRep) {
       const valid = await verifyPassword(password, salesRep.password);
       if (!valid) return { message: "Invalid email or password." };
+      await upgradePassword("SALES_REP", salesRep.id, salesRep.password, password);
       await createSession(salesRep.id, Role.SALES_REP, salesRep.email);
       redirect(landing(Role.SALES_REP, formData.get("next")));
     }
@@ -86,6 +100,7 @@ export async function login(
       }
       const valid = await verifyPassword(password, physician.password);
       if (!valid) return { message: "Invalid email or password." };
+      await upgradePassword("PHYSICIAN", physician.id, physician.password, password);
       await createSession(physician.id, Role.PHYSICIAN, physician.email);
       redirect(landing(Role.PHYSICIAN, formData.get("next")));
     }

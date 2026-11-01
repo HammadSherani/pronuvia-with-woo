@@ -1,16 +1,17 @@
 <?php
 /**
  * Plugin Name: Pronuvia Customer Accounts
- * Description: Gives each Pronuvia rep / doctor customer account the site's sales rep / doctor role (mlm_sales_rep / doctor), and keeps its username equal to their Pronuvia Login ID.
- * Version:     1.1.0
+ * Description: Gives each Pronuvia rep / doctor customer account the site's sales rep / doctor role (mlm_medial_rep / mlm_doctor on the old site, else mlm_sales_rep / doctor), and keeps its username equal to their Pronuvia Login ID.
+ * Version:     1.2.0
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
  * Pronuvia creates a WooCommerce customer account for each sales rep and
  * doctor (so their orders belong to them) and writes two meta on it:
  *   - `pronuvia_role` (SALES_REP / PHYSICIAN): the account gets the site's
- *     existing role `mlm_sales_rep` / `doctor` instead of Customer (they are
- *     created, with Customer permissions, only if missing);
+ *     existing role instead of Customer: on the old Pronuvia site
+ *     `mlm_medial_rep` / `mlm_doctor`, elsewhere `mlm_sales_rep` / `doctor`
+ *     (created, with Customer permissions, only if the site has none);
  *   - `pronuvia_login_id`: WordPress can't change a username, so this plugin
  *     renames the account to the Login ID.
  * `pronuvia_role` = DELETED (sent by Pronuvia right before it deletes the
@@ -23,20 +24,34 @@
 
 defined( 'ABSPATH' ) || exit;
 
-// The site's existing roles (from its earlier setup); label used only if missing
+// The site's existing roles, first one the site has wins: the old Pronuvia
+// site's MLM roles, then the ones from the staging setup. The last one is
+// created (label used) only if the site has none of them.
 const PRONUVIA_CUSTOMER_ROLES = array(
-	'SALES_REP' => array( 'mlm_sales_rep', 'Sales Rep' ),
-	'PHYSICIAN' => array( 'doctor', 'Doctor' ),
+	'SALES_REP' => array( array( 'mlm_medial_rep', 'mlm_sales_rep' ), 'Sales Rep' ),
+	'PHYSICIAN' => array( array( 'mlm_doctor', 'doctor' ), 'Doctor' ),
 );
 
-// Only if a role is missing: create it with what a Customer can do
+/** The role this site uses for a Pronuvia role. */
+function pronuvia_customer_role_slug( $pronuvia_role ) {
+	$slugs = PRONUVIA_CUSTOMER_ROLES[ $pronuvia_role ][0];
+	foreach ( $slugs as $slug ) {
+		if ( get_role( $slug ) ) {
+			return $slug;
+		}
+	}
+	return end( $slugs );
+}
+
+// Only if the site has none of a role's names: create it with what a Customer can do
 add_action( 'init', 'pronuvia_customer_roles_register' );
 function pronuvia_customer_roles_register() {
 	$customer = get_role( 'customer' );
 	$caps     = $customer ? $customer->capabilities : array( 'read' => true );
-	foreach ( PRONUVIA_CUSTOMER_ROLES as $pair ) {
-		if ( ! get_role( $pair[0] ) ) {
-			add_role( $pair[0], $pair[1], $caps );
+	foreach ( PRONUVIA_CUSTOMER_ROLES as $pronuvia_role => $pair ) {
+		$slug = pronuvia_customer_role_slug( $pronuvia_role );
+		if ( ! get_role( $slug ) ) {
+			add_role( $slug, $pair[1], $caps );
 		}
 	}
 }
@@ -87,7 +102,7 @@ function pronuvia_customer_set_role( $user_id, $pronuvia_role ) {
 		return 'role reset';
 	}
 	pronuvia_customer_roles_register();
-	$role = PRONUVIA_CUSTOMER_ROLES[ $pronuvia_role ][0];
+	$role = pronuvia_customer_role_slug( $pronuvia_role );
 	if ( array( $role ) === array_values( (array) $user->roles ) ) {
 		return 'nothing to change';
 	}
