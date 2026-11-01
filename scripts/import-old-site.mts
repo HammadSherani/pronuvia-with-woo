@@ -434,14 +434,21 @@ if (wipe) {
 
 await insertNew(prisma.salesRepresentative as never, repRows, "reps");
 await insertNew(prisma.partneringPhysician as never, docRows, "doctors");
-// A second run with passwords that came later: set them where the placeholder still is
+// A second run with passwords that came later: set them where the placeholder
+// still is (checked here: Prisma's startsWith on Mongo doesn't escape "$")
 if (!dry) {
   let set = 0;
-  for (const r of repRows.filter((r) => !String(r.password).startsWith(PLACEHOLDER))) {
-    set += (await prisma.salesRepresentative.updateMany({ where: { id: r.id as string, password: { startsWith: PLACEHOLDER } }, data: { password: r.password as string } })).count;
+  const withHash = new Map([...repRows, ...docRows].filter((r) => !String(r.password).startsWith(PLACEHOLDER)).map((r) => [r.id as string, r.password as string]));
+  const stillPlaceholder = async (m: { findMany: (a: object) => Promise<{ id: string; password: string }[]> }) =>
+    (await m.findMany({ where: { id: { in: [...withHash.keys()] } }, select: { id: true, password: true } }))
+      .filter((u) => u.password.startsWith(PLACEHOLDER)).map((u) => u.id);
+  for (const id of await stillPlaceholder(prisma.salesRepresentative as never)) {
+    await prisma.salesRepresentative.update({ where: { id }, data: { password: withHash.get(id)! } });
+    set++;
   }
-  for (const r of docRows.filter((r) => !String(r.password).startsWith(PLACEHOLDER))) {
-    set += (await prisma.partneringPhysician.updateMany({ where: { id: r.id as string, password: { startsWith: PLACEHOLDER } }, data: { password: r.password as string, hasCustomPassword: true } })).count;
+  for (const id of await stillPlaceholder(prisma.partneringPhysician as never)) {
+    await prisma.partneringPhysician.update({ where: { id }, data: { password: withHash.get(id)!, hasCustomPassword: true } });
+    set++;
   }
   if (set) console.log(`passwords set on existing accounts: ${set}`);
 }
