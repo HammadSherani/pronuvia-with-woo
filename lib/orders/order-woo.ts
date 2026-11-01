@@ -51,7 +51,7 @@ export function toWooAddress(raw: string | null | undefined): WooOrderAddress | 
   }
 }
 
-function fromWooAddress(w: WooOrderAddress): AddressJson {
+export function fromWooAddress(w: WooOrderAddress): AddressJson {
   // Woo prefixes some state codes ("DE-BE"); our form uses the bare code
   const state = w.state.startsWith(`${w.country}-`) ? w.state.slice(w.country.length + 1) : w.state;
   return {

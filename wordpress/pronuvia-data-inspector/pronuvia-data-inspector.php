@@ -348,6 +348,17 @@ function pronuvia_inspect_orders( $request ) {
 				return array( 'method' => $s->get_method_title(), 'total' => $s->get_total() );
 			}, $o->get_items( 'shipping' ) ) ),
 			'coupons'        => $o->get_coupon_codes(),
+			'refunds'        => array_map( function ( $r ) {
+				return array(
+					'id'     => $r->get_id(),
+					'amount' => $r->get_amount(),
+					'reason' => $r->get_reason(),
+					'date'   => $r->get_date_created() ? $r->get_date_created()->date( 'c' ) : null,
+					'items'  => array_values( array_map( function ( $i ) {
+						return array( 'product_id' => $i->get_product_id(), 'variation_id' => $i->get_variation_id(), 'qty' => $i->get_quantity(), 'total' => $i->get_total() );
+					}, $r->get_items() ) ),
+				);
+			}, $o->get_refunds() ),
 			'customer_note'  => $o->get_customer_note(),
 			'items'          => $items,
 			'meta'           => array_map( function ( $m ) {
