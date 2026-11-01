@@ -4,6 +4,41 @@ Live par jaane ka tarteeb-waar kaam. Har qadam tick karte jayein. Tafseel ke liy
 
 ---
 
+## Staging: gray WP aur dashboard mein live (login2) ka data, live ko chhue baghair
+
+Gray (`gray-elephant-251225.hostingersite.com`) live site ki **poori copy** banti hai (WP ki sab IDs live jaisi), aur dashboard ka Mongo `pronuvia` live ke data se bharta hai. Live par sirf ek **Export** chalta hai.
+
+**A. Gray par tayyari (clone se pehle)**
+- [ ] Hostinger File Manager → gray ki `wp-config.php` mein (`/* That's all, stop editing! */` se upar):
+  ```php
+  define( 'DISABLE_WP_CRON', true );
+  define( 'PRONUVIA_GUARD_ALLOW', '<app ka domain, e.g. pronuvia-with-woo.vercel.app>' );
+  ```
+- [ ] `wordpress/pronuvia-staging-guard.php` → gray ki `wp-content/mu-plugins/` mein (folder na ho to banayein). Ye gray se koi email aur bahar ki koi request (Stripe, HubSpot, Jetpack, FedEx, WooCommerce Shipping…) nahi jane deta, siwaye app aur wordpress.org ke. **Live par kabhi nahi.**
+- [ ] Gray par All-in-One WP Migration install (backup bada ho to Unlimited extension).
+
+**B. Clone**
+- [ ] Live → All-in-One WP Migration → Export → File. Advanced: spam comments, post revisions, cache chhod dein; "Do not export must-use plugins" tick. Download; phir live par **Backups** se wo file **delete** (is mein sab ke password hashes hain).
+- [ ] Gray → All-in-One WP Migration → Import → wo file. Gray ka saara data badal jata hai.
+- [ ] Gray mein **live ke admin login** se login → upar laal "Staging guard active" notice dikhe (na dikhe to ruk jayein).
+- [ ] Gray par deactivate: MLM Plugin, WooCommerce Stripe Gateway, WooPayments, WP Fusion Lite, Jetpack, WooCommerce Shipping, FedEx plugin, WP Mail SMTP, Better Notifications for WP, Popup Maker.
+- [ ] WooCommerce → Settings → Emails: customer emails band. → Advanced → Webhooks: live ke purane webhooks **Disabled**.
+
+**C. Gray ko app se jorna**
+- [ ] Gray par nayi REST key (Read/Write) → `.env` aur Vercel mein `WOO_CONSUMER_KEY` / `WOO_CONSUMER_SECRET`.
+- [ ] Hamare plugins upload + activate: Customer Accounts 1.2.0, Commissions, Order Number, Shipped Status, SSO.
+- [ ] Admin login → `POST /api/woo/setup-webhooks`.
+
+**D. Data (gray se padhna, live se nahi)**
+- [ ] Gray par `pronuvia-data-inspector.zip` (1.1.0) activate → key → `node D:/claude-tmp/e2e/inspect-old-site.mjs https://gray-elephant-251225.hostingersite.com <key>` → plugin delete.
+- [ ] Vercel ka `DATABASE_URL` = `.env` wala database (`pronuvia`) — confirm.
+- [ ] Backup: `DBURL=<url> node D:/claude-tmp/e2e/backup-db.mjs` (wapas: `restore-db.mjs <folder> --db=pronuvia --yes`).
+- [ ] `tsx --conditions=react-server --env-file=.env scripts/import-old-site.mts --db=pronuvia --wipe-test --woo-review-meta --dry`, phir bina `--dry`.
+- [ ] `tsx --conditions=react-server --env-file=.env scripts/woo-sync-customers.mts --dry`, phir bina `--dry`.
+- [ ] `D:/claude-tmp/old-site/passwords.json` delete.
+
+---
+
 ## 0. Live se pehle zaroori code kaam
 
 - [x] **Saare order kaam WP admin se** (commission-work): Pronuvia admin mein order sirf dekhne ke liye (details, tracking, notes, commission, print). Status, refund, notes, emails, commission approve / reject / refund → WooCommerce order page

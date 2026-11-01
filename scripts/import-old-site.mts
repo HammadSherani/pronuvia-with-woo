@@ -19,16 +19,21 @@
 // --db must name the database in DATABASE_URL (a guard against the wrong one).
 // --wipe-test first deletes the test doctors, reps, orders, wallets, payouts
 // and commission history (admins, banners, blogs, coupons stay).
+// --woo-review-meta writes the commission review meta on the orders awaiting
+// review in WooCommerce (WOO_URL), so the WP Commissions box can approve them;
+// never on the live site (refused when WOO_URL is login2.pronuvia.com).
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db/prisma";
 import { fromWooAddress } from "@/lib/orders/order-woo";
-import type { WooOrderAddress } from "@/lib/woo/orders";
+import { updateWooOrder, type WooOrderAddress } from "@/lib/woo/orders";
+import { NAME_META_KEYS, REVIEW_META_KEY, reviewMetaFor } from "@/lib/orders/commission-review";
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const dry  = process.argv.includes("--dry");
 const wipe = process.argv.includes("--wipe-test");
+const reviewMeta = process.argv.includes("--woo-review-meta");
 const DATA = arg("data") ?? "D:/claude-tmp/old-site";
 const TZ   = "America/New_York";   // the old site's timezone (MLM ledger dates)
 
@@ -248,6 +253,8 @@ for (const o of orders) {
   for (const l of rows) {
     const uid = Number(l.user_id);
     const pts = Number(l.points) || 0;
+    // $0 rows (e.g. a doctor with no commission) need no review
+    if (pts <= 0) { bump("ledger rows of $0 (skipped)"); continue; }
     const role = l.level === "0" && isDoctor(uid) && (!physicianId || docOid(uid) === physicianId) ? "PHYSICIAN"
       : l.level === "1" && isRep(uid) ? "SALES_REP" : null;
     if (!role) {
@@ -473,5 +480,25 @@ console.log(`paid out to deleted / company / admin accounts (not imported): $${r
 console.log(`approved, not paid yet → wallets / Commission Payout: $${r2(owed)} for ${runningRows.length} users`);
 console.log(`orders with commission awaiting review (WP box needs review meta on switch day): ${awaitingWooIds.length}`);
 console.log(`next new order number: ${highest + 1}`);
+
+// The WP Commissions box of the orders awaiting review (on the copy only)
+if (reviewMeta) {
+  const wooHost = new URL(process.env.WOO_URL!).hostname;
+  if (/(^|\.)login2\.pronuvia\.com$/i.test(wooHost)) {
+    console.error(`--woo-review-meta refused: WOO_URL is the live site (${wooHost})`);
+  } else {
+    const nameOf = new Map([...repRows, ...docRows].map((r) => [r.id as string, `${r.firstName} ${r.lastName}`.trim()]));
+    const awaiting = orderRows.filter((o) => o.physicianCommissionReview === "AWAITING" || o.salesRepCommissionReview === "AWAITING");
+    for (const o of awaiting) {
+      const meta = [
+        { key: REVIEW_META_KEY, value: JSON.stringify(reviewMetaFor(o as never)) },
+        ...(o.physicianId ? [{ key: NAME_META_KEYS.physician, value: nameOf.get(o.physicianId as string) ?? "" }] : []),
+        ...(o.salesRepId ? [{ key: NAME_META_KEYS.sales_rep, value: nameOf.get(o.salesRepId as string) ?? "" }] : []),
+      ];
+      if (!dry) await updateWooOrder(o.wooOrderId as number, { meta_data: meta });
+      console.log(`review meta ${dry ? "(dry run) " : ""}→ Woo #${o.wooOrderId} (${wooHost}): ${meta[0].value}`);
+    }
+  }
+}
 if (notes.length) console.log(`\n== Notes (${notes.length})\n` + notes.join("\n"));
 await prisma.$disconnect();
