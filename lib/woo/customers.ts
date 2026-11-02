@@ -149,6 +149,17 @@ function customerBody(u: UserProfile) {
   };
 }
 
+/**
+ * The update for an existing customer. An email that differs only in case
+ * (accounts brought over from the old site keep their capitals) is left as it
+ * is: WooCommerce refuses to change the email of a doctor / rep role account.
+ */
+function updateBody(u: UserProfile, current: WooCustomer) {
+  const body: Partial<ReturnType<typeof customerBody>> = customerBody(u);
+  if (current.email.toLowerCase() === u.email.toLowerCase()) delete body.email;
+  return body;
+}
+
 const ownerOf = (c: WooCustomer) => c.meta_data.find((m) => m.key === META_OWNER)?.value as string | undefined;
 
 /**
@@ -301,7 +312,7 @@ export async function syncWooCustomer(
           return { ...res, status: "shared", wooCustomerId: current.id, reason: "customer owned by another Pronuvia user" };
         }
         if (!opts.dryRun) {
-          await wooFetch(`wc/v3/customers/${current.id}`, { method: "PUT", body: customerBody(u) });
+          await wooFetch(`wc/v3/customers/${current.id}`, { method: "PUT", body: updateBody(u, current) });
         }
         return { ...res, status: "updated", wooCustomerId: current.id };
       }
@@ -314,7 +325,7 @@ export async function syncWooCustomer(
       if (!opts.dryRun) {
         if (!owner) {
           // Unclaimed account with this email: claim it and fill in our details
-          await wooFetch(`wc/v3/customers/${existing.id}`, { method: "PUT", body: customerBody(u) });
+          await wooFetch(`wc/v3/customers/${existing.id}`, { method: "PUT", body: updateBody(u, existing) });
         }
         await saveWooCustomerId(role, u.id, existing.id);
       }
