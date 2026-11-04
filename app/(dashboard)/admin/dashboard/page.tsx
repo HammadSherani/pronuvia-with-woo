@@ -50,7 +50,7 @@ export default async function AdminDashboardPage({
     {
       label: "Gross Revenue",
       value: fmtMoney(kpis.totalRevenue),
-      change: kpis.revenueChange,
+      change: null as number | null,   // % change badge hidden
       href: "/admin/orders",
       color: "#3DBFA4",
       bg: "#edfaf6",
@@ -63,7 +63,7 @@ export default async function AdminDashboardPage({
     {
       label: "Total Orders",
       value: kpis.totalOrders.toLocaleString(),
-      change: kpis.ordersChange,
+      change: null as number | null,   // % change badge hidden
       href: "/admin/orders",
       color: "#5BB8D4",
       bg: "#edf6fb",
