@@ -34,6 +34,7 @@ Gray (`gray-elephant-251225.hostingersite.com`) live site ki **poori copy** bant
 - [ ] Vercel ka `DATABASE_URL` = `.env` wala database (`pronuvia`) — confirm.
 - [ ] Backup: `DBURL=<url> node D:/claude-tmp/e2e/backup-db.mjs` (wapas: `restore-db.mjs <folder> --db=pronuvia --yes`).
 - [ ] `tsx --conditions=react-server --env-file=.env scripts/import-old-site.mts --db=pronuvia --wipe-test --woo-review-meta --dry`, phir bina `--dry`.
+- [ ] Tracking (import us ko nahi uthata): `tsx --conditions=react-server --env-file=.env scripts/import-old-tracking.mts --db=pronuvia --dry`, phir bina `--dry`. Labels "notified" mark hote hain, is liye purane orders par koi "shipped" email nahi jati.
 - [ ] `tsx --conditions=react-server --env-file=.env scripts/woo-sync-customers.mts --dry`, phir bina `--dry`.
 - [ ] `D:/claude-tmp/old-site/passwords.json` delete.
 
