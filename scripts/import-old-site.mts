@@ -117,9 +117,12 @@ const notes: string[] = [];
 // ── users ──
 
 type Kind = "rep" | "doctor" | "empty";
+// Accounts saved with both a doctor and a rep role (WordPress reads the doctor
+// one) that the client confirmed are sales reps: Robert Gear, Renee Schwartz
+const REP_ACCOUNTS = new Set([188, 309]);
 function kindOf(u: OldUser): Kind | null {
   if (u.roles.includes("administrator") || u.id === 3) return null;   // admins and the company account
-  if (u.roles.includes("mlm_medial_rep")) return "rep";
+  if (u.roles.includes("mlm_medial_rep") || REP_ACCOUNTS.has(u.id)) return "rep";
   if (u.roles.includes("mlm_doctor")) return "doctor";
   if (u.roles.length === 0) return "empty";
   return null;
@@ -168,7 +171,9 @@ for (const u of sortedUsers) {
     continue;
   }
 
-  const parent = Number(str(m.parent_user));
+  // The first parent, unless a later one is one of the rep accounts above
+  const parents = ([] as unknown[]).concat(m.parent_user ?? []).map(Number);
+  const parent = parents.find((p) => REP_ACCOUNTS.has(p)) ?? parents[0];
   const approved = ([] as unknown[]).concat(m.is_admin_approved ?? []).map(String).includes("yes");
   const specialty = str(m["field-specialty"]);
   const years = parseInt(str(m["years-practice"]), 10);
