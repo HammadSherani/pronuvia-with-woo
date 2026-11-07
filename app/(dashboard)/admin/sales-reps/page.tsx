@@ -58,20 +58,20 @@ export default async function SalesRepsPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Self Commission</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Orders</th>
-                  <th className="text-left px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Added</th>
-                  <th className="px-5 py-3.5" />
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Login ID</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Self Commission</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Orders</th>
+                  <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Added</th>
+                  <th className="px-4 py-3.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {reps.map((r) => (
                   <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-5 py-3.5">
+                    <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-gray-900/10 flex items-center justify-center shrink-0">
                           <span className="text-xs font-semibold text-[#3DBFA4]">
@@ -81,19 +81,19 @@ export default async function SalesRepsPage({
                         <span className="font-medium text-gray-800">{r.name}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-500">{r.email}</td>
-                    <td className="px-5 py-3.5 text-gray-500">{r.loginId || "Not set"}</td>
-                    <td className="px-5 py-3.5 text-gray-500">{r.phone ?? "—"}</td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-4 py-3.5 text-gray-500 break-all min-w-[140px]">{r.email}</td>
+                    <td className="px-4 py-3.5 text-gray-500 break-all min-w-[110px]">{r.loginId || "Not set"}</td>
+                    <td className="px-4 py-3.5 text-gray-500">{r.phone ?? "—"}</td>
+                    <td className="px-4 py-3.5">
                       <span className="inline-flex px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
                         {r.commission}%
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-600">{r.ordersCount}</td>
-                    <td className="px-5 py-3.5 text-gray-400 text-xs">
+                    <td className="px-4 py-3.5 text-gray-600">{r.ordersCount}</td>
+                    <td className="px-4 py-3.5 text-gray-400 text-xs whitespace-nowrap">
                       {formatDate(r.createdAt)}
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3 justify-end">
                         <Link
                           href={`/admin/sales-reps/${r.id}/orders`}

@@ -111,3 +111,12 @@ input:-webkit-autofill:focus {
 ._9er_pF0e__Easel {
   display: none !important;
 }
+/* Dashboard tables: a table wider than its card scrolls sideways inside the
+   card instead of being cut off at the right edge (cards use overflow-hidden
+   for their rounded corners). Unlayered, so it wins over the Tailwind class. */
+main.dash :has(> table) {
+  overflow-x: auto;
+}
+main.dash table td:last-child:has(a, button) {
+  white-space: nowrap;
+}

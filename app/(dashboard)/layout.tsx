@@ -45,7 +45,7 @@ export default async function DashboardLayout({
           <MainHeader role={session.role} />
           <SubHeader role={session.role} />
         </AdminBadgesProvider>
-        <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8">
+        <main className="dash flex-1 max-w-7xl w-full mx-auto px-6 py-8">
           {children}
         </main>
         {showBankGate && <BankNotifyGate role={session.role as "PHYSICIAN" | "SALES_REP"} />}
