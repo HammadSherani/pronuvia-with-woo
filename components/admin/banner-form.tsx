@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import toast from "react-hot-toast";
 import { ImageUpload } from "@/components/admin/image-upload";
+import { BANNER_RECOMMENDED } from "@/components/dashboard/banner-carousel";
 import type { BannerActionState } from "@/actions/admin/banners";
 import { useKeepValuesSubmit } from "@/lib/forms/use-keep-values-submit";
 
@@ -47,6 +48,7 @@ export function BannerForm({ action, defaultValues }: BannerFormProps) {
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">Banner Image</label>
         <ImageUpload name="__imageUrl" value={imageUrl} onChange={setImageUrl} />
+        <BannerSizeHint imageUrl={imageUrl} />
         {state?.errors?.imageUrl && (
           <p className="text-xs text-red-500 mt-1">{state.errors.imageUrl[0]}</p>
         )}
@@ -131,5 +133,45 @@ export function BannerForm({ action, defaultValues }: BannerFormProps) {
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * The size the shop banner should be, and a check of the uploaded image: the
+ * shop shows any image in full, but a narrow image looks blurry and a tall one
+ * becomes a very high banner.
+ */
+function BannerSizeHint({ imageUrl }: { imageUrl: string }) {
+  const [size, setSize] = useState<{ url: string; w: number; h: number } | null>(null);
+  const { width: W, height: H } = BANNER_RECOMMENDED;
+
+  useEffect(() => {
+    if (!imageUrl) return;
+    let live = true;
+    const img = new Image();
+    img.onload = () => { if (live) setSize({ url: imageUrl, w: img.naturalWidth, h: img.naturalHeight }); };
+    img.src = imageUrl;
+    return () => { live = false; };
+  }, [imageUrl]);
+
+  const cur = size && size.url === imageUrl ? size : null;
+  const warnings: string[] = [];
+  if (cur) {
+    if (cur.w < 1200) warnings.push(`It is only ${cur.w}px wide, so it may look blurry on large screens.`);
+    if (cur.w / cur.h < 2) warnings.push("It is quite tall, so the banner will take a lot of space above the products.");
+  }
+
+  return (
+    <div className="mt-2 space-y-1 text-xs">
+      <p className="text-gray-500">
+        Recommended size: <span className="font-medium text-gray-700">{W} × {H} px</span> (4:1, JPG or PNG).
+        The whole image is shown across the full width of the shop, so keep text away from the very edges.
+      </p>
+      {cur && (
+        <p className={warnings.length ? "text-amber-600" : "text-emerald-600"}>
+          This image is {cur.w} × {cur.h} px. {warnings.length ? warnings.join(" ") : "Good size for the banner."}
+        </p>
+      )}
+    </div>
   );
 }
