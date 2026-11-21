@@ -6,6 +6,7 @@ import { CommissionPayoutClient } from "@/components/admin/commission-payout-cli
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { wpAdmin } from "@/lib/woo/admin-links";
 import { payoutsLocked } from "@/lib/withdrawals/lock";
+import { countUsersToNotify } from "@/actions/admin/notify-bank";
 
 export const metadata = { title: "Commission Payout – Pronuvia Admin" };
 
@@ -149,13 +150,13 @@ export default async function CommissionPayoutPage() {
     allRepIds.length
       ? prisma.salesRepresentative.findMany({
           where:  { id: { in: allRepIds } },
-          select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true },
+          select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true, bankNotifyRequested: true },
         })
       : [],
     allDocIds.length
       ? prisma.partneringPhysician.findMany({
           where:  { id: { in: allDocIds } },
-          select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true },
+          select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true, bankNotifyRequested: true },
         })
       : [],
     // Commission-paid orders for payout modal (Show Orders)
@@ -197,7 +198,7 @@ export default async function CommissionPayoutPage() {
   }
 
   // ── Build PENDING PAYOUT rows (previous months) ───────────────────────────
-  type UserInfo = { firstName: string; lastName: string; email: string; bankName: string | null; bankAccountNumber: string | null; bankAccountName: string | null };
+  type UserInfo = { firstName: string; lastName: string; email: string; bankName: string | null; bankAccountNumber: string | null; bankAccountName: string | null; bankAccountType: string | null; bankOwnershipType: string | null; bankNotifyRequested: boolean };
 
   const pending = pendingWithdrawals.flatMap((r) => {
     const user = r.userRole === "PHYSICIAN" ? docMap.get(r.userId) : repMap.get(r.userId);
@@ -403,10 +404,10 @@ export default async function CommissionPayoutPage() {
   const missingReps = [...repRejectedMap.keys()].filter((id) => !repMap.has(id));
   const missingDocs = [...docRejectedMap.keys()].filter((id) => !docMap.has(id));
   if (missingReps.length) {
-    for (const r of await prisma.salesRepresentative.findMany({ where: { id: { in: missingReps } }, select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true } })) repMap.set(r.id, r);
+    for (const r of await prisma.salesRepresentative.findMany({ where: { id: { in: missingReps } }, select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true, bankNotifyRequested: true } })) repMap.set(r.id, r);
   }
   if (missingDocs.length) {
-    for (const d of await prisma.partneringPhysician.findMany({ where: { id: { in: missingDocs } }, select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true } })) docMap.set(d.id, d);
+    for (const d of await prisma.partneringPhysician.findMany({ where: { id: { in: missingDocs } }, select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true, bankNotifyRequested: true } })) docMap.set(d.id, d);
   }
 
   const rejectedCommission: RejectedCommissionEntry[] = [
@@ -449,6 +450,7 @@ export default async function CommissionPayoutPage() {
         rejectedCommission={rejectedCommission}
         monthLabel={monthLabel}
         locked={payoutsLocked()}
+        notifyAllCount={await countUsersToNotify()}
       />
     </div>
   );

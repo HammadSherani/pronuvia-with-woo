@@ -1,10 +1,12 @@
 "use client";
 
+import { bankDetailsComplete, bankDetailsPartial } from "@/lib/bank/labels";
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { updateWithdrawRequest, bulkUpdateWithdrawals } from "@/actions/admin/manage-withdrawals";
-import { notifyUserAddBank } from "@/actions/admin/notify-bank";
+import { notifyUserAddBank, notifyAllWithoutBank } from "@/actions/admin/notify-bank";
 import { formatDate, formatMonthYear } from "@/lib/utils/timezone";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -26,6 +28,10 @@ type UserInfo = {
   bankName:          string | null;
   bankAccountNumber: string | null;
   bankAccountName:   string | null;
+  bankAccountType:   string | null;
+  bankOwnershipType: string | null;
+  /** Already asked to add bank details (Notify) */
+  bankNotifyRequested?: boolean;
 };
 
 export type PendingRow = {
@@ -78,6 +84,8 @@ interface Props {
   monthLabel:   string;
   /** PAYOUTS_LOCKED: Approve and Notify are off (see lib/withdrawals/lock) */
   locked?:      boolean;
+  /** Users with a pending payout, no bank details and not asked yet ("Notify all") */
+  notifyAllCount?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -280,6 +288,37 @@ function ActionModal({
   );
 }
 
+// ── Notify all modal ──────────────────────────────────────────────────────────
+
+function NotifyAllModal({ count, busy, onClose, onConfirm }: { count: number; busy: boolean; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="notify-all-title">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+        <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center mb-3">
+          <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <h3 id="notify-all-title" className="text-base font-bold text-gray-800 mb-1">Email {count} user{count !== 1 ? "s" : ""}?</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Every doctor and rep with a pending payout and no complete bank details gets an email asking them to add their bank
+          details, and sees the request when they log in. People already notified are not emailed again.
+        </p>
+        <div className="flex gap-3">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 text-sm font-semibold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={busy}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-xl disabled:opacity-50 transition-colors">
+            {busy ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : `Send ${count} email${count !== 1 ? "s" : ""}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Bulk approve modal ────────────────────────────────────────────────────────
 
 function BulkApproveModal({
@@ -375,7 +414,7 @@ function TablePagination({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false }: Props) {
+export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false, notifyAllCount = 0 }: Props) {
   const [pending,      setPending]     = useState(initialPending);
   const [selected,     setSelected]    = useState<Set<string>>(new Set());
   const [bulkModal,    setBulkModal]   = useState(false);
@@ -386,13 +425,15 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
   const [rejectedPage, setRejectedPage] = useState(1);
   const [bulkBusy,     startBulk]     = useTransition();
   const [,             startNotify]   = useTransition();
+  const [notifyAllModal, setNotifyAllModal] = useState(false);
+  const [notifyAllBusy, startNotifyAll] = useTransition();
+  const router = useRouter();
 
   const removeRow  = (id: string)      => { setPending((p) => p.filter((r) => r.id !== id)); setSelected((s) => { const n = new Set(s); n.delete(id); return n; }); };
   const removeRows = (ids: string[])   => { const set = new Set(ids); setPending((p) => p.filter((r) => !set.has(r.id))); setSelected(new Set()); };
 
-  const hasBank       = (r: PendingRow) => Boolean(
-    r.user.bankName && r.user.bankAccountNumber && r.user.bankAccountName,
-  );
+  // Everything the approval needs (incl. checking/savings, personal/business)
+  const hasBank       = (r: PendingRow) => bankDetailsComplete(r.user);
   const bankRows      = pending.filter(hasBank);
   const allBankSel    = bankRows.length > 0 && bankRows.every((r) => selected.has(r.id));
   const someSel       = selected.size > 0 && !allBankSel;
@@ -424,6 +465,16 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
     });
   };
 
+
+  const handleNotifyAll = () => {
+    startNotifyAll(async () => {
+      const res = await notifyAllWithoutBank();
+      if (res.success) toast.success(res.message);
+      else toast.error(res.message);
+      setNotifyAllModal(false);
+      router.refresh();
+    });
+  };
 
   const pendingTotal = pending.reduce((s, r) => s + r.amount, 0);
   const currentTotal = currentMonth.reduce((s, e) => s + e.totalCommission, 0);
@@ -463,6 +514,20 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
             count={pending.length}
             countColor="bg-emerald-100 text-emerald-700 border-emerald-200"
           />
+          {selected.size === 0 && notifyAllCount > 0 && (
+            <button
+              type="button"
+              disabled={locked || notifyAllBusy}
+              title={locked ? "Payouts are locked" : "Email everyone with a pending payout and no bank details"}
+              onClick={() => setNotifyAllModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-50"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Notify all without bank ({notifyAllCount})
+            </button>
+          )}
           {selected.size > 0 && (
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-500">
@@ -568,11 +633,12 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                           {rowHasBank ? (
                             <span className="text-xs text-gray-600">{row.user.bankAccountName ?? row.user.bankName}</span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium">
+                            <span className="inline-flex items-center gap-1 text-xs text-amber-600 font-medium"
+                              title={bankDetailsPartial(row.user) ? "Bank details are missing account type (checking / savings) or personal / business" : undefined}>
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                               </svg>
-                              No bank
+                              {bankDetailsPartial(row.user) ? "Incomplete bank" : "No bank"}
                             </span>
                           )}
                         </td>
@@ -610,7 +676,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                                 </svg>
-                                Notify
+                                {row.user.bankNotifyRequested ? "Notify again" : "Notify"}
                               </button>
                             ) : (
                               <>
@@ -864,6 +930,9 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
       )}
 
       {/* ══ Modals ════════════════════════════════════════════════════════════ */}
+      {notifyAllModal && (
+        <NotifyAllModal count={notifyAllCount} busy={notifyAllBusy} onClose={() => setNotifyAllModal(false)} onConfirm={handleNotifyAll} />
+      )}
       {bulkModal && (
         <BulkApproveModal
           count={selected.size}
