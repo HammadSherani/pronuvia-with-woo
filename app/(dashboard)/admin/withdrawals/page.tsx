@@ -5,6 +5,7 @@ import { PageHeader }       from "@/components/admin/page-header";
 import { CommissionPayoutClient } from "@/components/admin/commission-payout-client";
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { wpAdmin } from "@/lib/woo/admin-links";
+import { payoutsLocked } from "@/lib/withdrawals/lock";
 
 export const metadata = { title: "Commission Payout – Pronuvia Admin" };
 
@@ -447,6 +448,7 @@ export default async function CommissionPayoutPage() {
         currentMonth={currentMonth}
         rejectedCommission={rejectedCommission}
         monthLabel={monthLabel}
+        locked={payoutsLocked()}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import { prisma }        from "@/lib/db/prisma";
 import { requireAdmin }  from "@/lib/auth/dal";
 import { sendMail }      from "@/lib/email/mailer";
 import { addBankDetailsEmail } from "@/lib/email/templates";
+import { payoutsLocked, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
 
 // Admin "Notify" on Commission Payout: the user is asked to add their bank
 // details when they next log in, and gets an email about it.
@@ -12,6 +13,7 @@ export async function notifyUserAddBank(
   userRole: "PHYSICIAN" | "SALES_REP",
 ): Promise<{ success: boolean; message: string }> {
   await requireAdmin();
+  if (payoutsLocked()) return { success: false, message: PAYOUTS_LOCKED_MESSAGE };
 
   let user: { firstName: string; email: string };
   try {

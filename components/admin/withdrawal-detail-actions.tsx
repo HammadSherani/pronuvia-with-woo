@@ -11,13 +11,15 @@ interface Props {
   userName:  string;
   userEmail: string;
   period:    string;
+  /** PAYOUTS_LOCKED: Approve is off (see lib/withdrawals/lock) */
+  locked?:   boolean;
 }
 
 function fmt(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-export function WithdrawalDetailActions({ requestId, amount, userName, userEmail, period }: Props) {
+export function WithdrawalDetailActions({ requestId, amount, userName, userEmail, period, locked = false }: Props) {
   const router = useRouter();
   const [modal, setModal] = useState<"APPROVED" | "REJECTED" | null>(null);
   const [note,  setNote]  = useState("");
@@ -44,7 +46,9 @@ export function WithdrawalDetailActions({ requestId, amount, userName, userEmail
         <button
           type="button"
           onClick={() => setModal("APPROVED")}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors"
+          disabled={locked}
+          title={locked ? "Payouts are locked while the commission data is being checked" : undefined}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-500"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />

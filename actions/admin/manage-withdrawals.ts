@@ -6,6 +6,7 @@ import { requireAdmin }                            from "@/lib/auth/dal";
 import { sendPayoutApprovalEmail, type ApprovedPayoutRequest } from "@/lib/withdrawals/notifications";
 import { markCommissionPaidOutInWoo }            from "@/lib/orders/commission-paid";
 import { lockPaidOutCommission }                 from "@/lib/withdrawals/paid-out";
+import { payoutsLocked, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
 
 export type WithdrawalActionState = {
   success?: boolean;
@@ -18,6 +19,8 @@ async function applyWithdrawDecision(
   adminNote: string | undefined,
   description: string,
 ): Promise<(ApprovedPayoutRequest & { paidOutOrderIds: string[] }) | null> {
+  // Checked here so every way of approving (single, bulk, detail page) is covered
+  if (action === "APPROVED" && payoutsLocked()) throw new Error(PAYOUTS_LOCKED_MESSAGE);
   const result = await prisma.$transaction(async (tx) => {
     const request = await tx.withdrawRequest.findUnique({
       where: { id: requestId },
@@ -164,6 +167,9 @@ export async function bulkUpdateWithdrawals(
   await requireAdmin();
 
   if (!ids.length) return { success: false, processed: 0, failed: 0, message: "No IDs provided." };
+  if (action === "APPROVED" && payoutsLocked()) {
+    return { success: false, processed: 0, failed: ids.length, message: PAYOUTS_LOCKED_MESSAGE };
+  }
 
   let processed = 0;
   let failed    = 0;

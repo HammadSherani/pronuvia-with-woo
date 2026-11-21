@@ -76,6 +76,8 @@ interface Props {
   currentMonth: CurrentMonthEntry[];
   rejectedCommission: RejectedCommissionEntry[];
   monthLabel:   string;
+  /** PAYOUTS_LOCKED: Approve and Notify are off (see lib/withdrawals/lock) */
+  locked?:      boolean;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -373,7 +375,7 @@ function TablePagination({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel }: Props) {
+export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false }: Props) {
   const [pending,      setPending]     = useState(initialPending);
   const [selected,     setSelected]    = useState<Set<string>>(new Set());
   const [bulkModal,    setBulkModal]   = useState(false);
@@ -439,6 +441,20 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
 
   return (
     <>
+      {locked && (
+        <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <div>
+            <p className="font-semibold">Payouts are locked</p>
+            <p className="mt-0.5 text-amber-700">
+              The commission data is being checked against the old site, so nothing is paid twice. Approve and Notify are turned off; you can still look at every request and its orders.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ══ 1. Commission Payout (pending withdraw requests — previous months) ═ */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -455,7 +471,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
               </span>
               <button
                 type="button"
-                disabled={bulkBusy}
+                disabled={bulkBusy || locked}
+                title={locked ? "Payouts are locked" : undefined}
                 onClick={() => setBulkModal(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded-lg transition-colors"
               >
@@ -579,7 +596,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                               /* No bank account — show Notify button only */
                               <button
                                 type="button"
-                                title="Notify user to add bank account"
+                                title={locked ? "Payouts are locked" : "Notify user to add bank account"}
+                                disabled={locked}
                                 onClick={() =>
                                   startNotify(async () => {
                                     const res = await notifyUserAddBank(row.userId, row.userRole);
@@ -587,7 +605,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                                     else toast.error(res.message);
                                   })
                                 }
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-50"
                               >
                                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -599,7 +617,9 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                             <button
                               type="button"
                               onClick={() => setActionModal({ row, action: "APPROVED" })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors"
+                              disabled={locked}
+                              title={locked ? "Payouts are locked" : undefined}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-500"
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
