@@ -1,5 +1,6 @@
 ﻿"use server";
 
+import { parseBankAccountType, parseBankOwnershipType } from "@/lib/bank/labels";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { requireAdmin } from "@/lib/auth/dal";
@@ -62,6 +63,8 @@ export async function adminCreatePhysician(
     bankAccountName:   (formData.get("bankAccountName") as string) || undefined,
     swiftCode:         (formData.get("swiftCode") as string) || undefined,
     routingNumber:     (formData.get("routingNumber") as string) || undefined,
+    bankAccountType:   parseBankAccountType(formData.get("bankAccountType")),
+    bankOwnershipType: parseBankOwnershipType(formData.get("bankOwnershipType")),
   };
 
   const { password: _rawPassword, confirmPassword: _rawConfirmPassword, ...rawForValues } = raw;
@@ -256,6 +259,8 @@ export async function updatePhysician(
     bankAccountName:   (formData.get("bankAccountName")    as string) || undefined,
     swiftCode:         (formData.get("swiftCode")          as string) || undefined,
     routingNumber:     (formData.get("routingNumber")      as string) || undefined,
+    bankAccountType:   parseBankAccountType(formData.get("bankAccountType")),
+    bankOwnershipType: parseBankOwnershipType(formData.get("bankOwnershipType")),
   };
 
   const validated = UpdatePhysicianSchema.safeParse(raw);
@@ -388,6 +393,7 @@ export async function getPhysicianById(id: string) {
       nameOfPractice: true, yearsInPractice: true, credential: true, patientsPerMonth: true, fieldsOfSpeciality: true,
       commission: true, uplineCommission: true,
       bankName: true, bankAccountNumber: true, bankAccountName: true, swiftCode: true, routingNumber: true,
+      bankAccountType: true, bankOwnershipType: true,
       addedByRole: true, salesRepId: true,
       salesRep: { select: { name: true, email: true, firstName: true, lastName: true } },
       createdAt: true, updatedAt: true,

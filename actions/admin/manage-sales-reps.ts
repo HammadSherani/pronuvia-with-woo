@@ -1,5 +1,6 @@
 ﻿"use server";
 
+import { parseBankAccountType, parseBankOwnershipType } from "@/lib/bank/labels";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { requireAdmin } from "@/lib/auth/dal";
@@ -34,6 +35,8 @@ function parseCreate(formData: FormData) {
     bankAccountName:   (formData.get("bankAccountName")   as string) || undefined,
     swiftCode:         (formData.get("swiftCode")         as string) || undefined,
     routingNumber:     (formData.get("routingNumber")     as string) || undefined,
+    bankAccountType:   parseBankAccountType(formData.get("bankAccountType")),
+    bankOwnershipType: parseBankOwnershipType(formData.get("bankOwnershipType")),
   };
 }
 
@@ -53,6 +56,8 @@ function parseUpdate(formData: FormData) {
     bankAccountName:   (formData.get("bankAccountName")   as string) || undefined,
     swiftCode:         (formData.get("swiftCode")         as string) || undefined,
     routingNumber:     (formData.get("routingNumber")     as string) || undefined,
+    bankAccountType:   parseBankAccountType(formData.get("bankAccountType")),
+    bankOwnershipType: parseBankOwnershipType(formData.get("bankOwnershipType")),
   };
 }
 
@@ -252,7 +257,7 @@ export async function getAllSalesRepsForExport() {
       email: true, loginId: true, phone: true, commission: true, ordersCount: true, walletBalance: true,
       billingAddress: true, shippingAddress: true,
       bankName: true, bankAccountNumber: true, bankAccountName: true,
-      swiftCode: true, routingNumber: true,
+      swiftCode: true, routingNumber: true, bankAccountType: true, bankOwnershipType: true,
       createdAt: true,
       physicians: {
         select: { firstName: true, lastName: true, email: true, state: true, nameOfPractice: true },
@@ -272,6 +277,7 @@ export async function getSalesRepById(id: string) {
       phone: true, website: true, commission: true, ordersCount: true, walletBalance: true,
       billingAddress: true, shippingAddress: true,
       bankName: true, bankAccountNumber: true, bankAccountName: true, swiftCode: true, routingNumber: true,
+      bankAccountType: true, bankOwnershipType: true,
       createdAt: true, updatedAt: true,
       physicians: {
         select: {

@@ -1,5 +1,6 @@
 "use client";
 
+import { bankAccountTypeLabel, bankOwnershipLabel } from "@/lib/bank/labels";
 import { useState } from "react";
 import * as XLSX from "xlsx";
 import { getAllSalesRepsForExport } from "@/actions/admin/manage-sales-reps";
@@ -27,6 +28,8 @@ export function SalesRepsExportButton() {
         "Bank Name":           r.bankName ?? "",
         "Bank Account #":      r.bankAccountNumber ?? "",
         "Bank Account Name":   r.bankAccountName ?? "",
+        "Account Type":        bankAccountTypeLabel(r.bankAccountType) ?? "",
+        "Personal or Business": bankOwnershipLabel(r.bankOwnershipType) ?? "",
         "Swift Code":          r.swiftCode ?? "",
         "Routing Number":      r.routingNumber ?? "",
         "Doctors":             r.physicians

@@ -1,5 +1,6 @@
 "use client";
 
+import { BankTypeFields } from "@/components/admin/bank-type-fields";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -18,6 +19,7 @@ interface SalesRepFormProps {
     firstName?: string; lastName?: string; email?: string; loginId?: string; phone?: string;
     commission?: number; billingAddress?: string; shippingAddress?: string;
     bankName?: string; bankAccountNumber?: string; bankAccountName?: string; swiftCode?: string; routingNumber?: string;
+    bankAccountType?: string; bankOwnershipType?: string;
   };
 }
 
@@ -276,6 +278,10 @@ export function SalesRepForm({ action, submitLabel, backHref, successRedirect, i
           <label className={lbl}>Account Name</label>
           <input name="bankAccountName" className={icls()} placeholder="John Smith" defaultValue={defaults?.bankAccountName} />
         </div>
+        <BankTypeFields
+          className="grid grid-cols-2 gap-4 mb-4" labelClass={lbl} selectClass={icls()}
+          defaultAccountType={defaults?.bankAccountType} defaultOwnership={defaults?.bankOwnershipType}
+        />
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className={lbl}>Account Number</label>

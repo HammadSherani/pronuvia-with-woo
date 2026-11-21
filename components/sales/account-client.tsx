@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { bankAccountTypeLabel, bankOwnershipLabel } from "@/lib/bank/labels";
 import { useActionState, useState } from "react";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -143,8 +144,8 @@ function ViewMode({ r, onEdit }: { r: Rep; onEdit: () => void }) {
         <InfoRow label="Bank Name"      value={r.bankName} />
         <InfoRow label="Account Name"   value={r.bankAccountName} />
         <InfoRow label="Account Number" value={r.bankAccountNumber} />
-        <InfoRow label="Account Type" value={r.bankAccountType} />
-        <InfoRow label="Personal / Business" value={r.bankOwnershipType} />
+        <InfoRow label="Account Type" value={bankAccountTypeLabel(r.bankAccountType)} />
+        <InfoRow label="Personal / Business" value={bankOwnershipLabel(r.bankOwnershipType)} />
         <InfoRow label="SWIFT (for International)" value={r.swiftCode} />
         <InfoRow label="Routing Number" value={r.routingNumber} />
       </Section>

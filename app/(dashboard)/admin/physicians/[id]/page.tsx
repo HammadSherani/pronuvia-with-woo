@@ -1,4 +1,5 @@
-﻿import { notFound } from "next/navigation";
+﻿import { bankAccountTypeLabel, bankOwnershipLabel } from "@/lib/bank/labels";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/dal";
 import { getPhysicianById } from "@/actions/admin/manage-physicians";
@@ -174,6 +175,8 @@ export default async function PhysicianViewPage({ params }: Props) {
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
           <InfoRow label="Bank Name"       value={p.bankName} />
           <InfoRow label="Account Name"    value={p.bankAccountName} />
+          <InfoRow label="Account Type"    value={bankAccountTypeLabel(p.bankAccountType)} />
+          <InfoRow label="Personal or Business" value={bankOwnershipLabel(p.bankOwnershipType)} />
           <InfoRow label="SWIFT (for International)" value={p.swiftCode} />
           <InfoRow label="Routing Number"  value={p.routingNumber} />
           <div className="col-span-2">

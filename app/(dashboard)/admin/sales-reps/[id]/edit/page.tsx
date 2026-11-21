@@ -57,6 +57,8 @@ export default async function EditSalesRepPage({ params }: Props) {
           bankAccountName:   rep.bankAccountName    ?? undefined,
           swiftCode:         rep.swiftCode          ?? undefined,
           routingNumber:     rep.routingNumber      ?? undefined,
+          bankAccountType:   rep.bankAccountType    ?? undefined,
+          bankOwnershipType: rep.bankOwnershipType  ?? undefined,
         }}
       />
     </div>

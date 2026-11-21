@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { bankAccountTypeLabel, bankOwnershipLabel } from "@/lib/bank/labels";
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -152,8 +153,8 @@ function ViewMode({ p, onEdit }: { p: Physician; onEdit: () => void }) {
         <InfoRow label="Bank Name"       value={p.bankName} />
         <InfoRow label="Account Name"    value={p.bankAccountName} />
         <InfoRow label="Account Number"  value={p.bankAccountNumber} />
-        <InfoRow label="Account Type"    value={p.bankAccountType} />
-        <InfoRow label="Personal / Business" value={p.bankOwnershipType} />
+        <InfoRow label="Account Type" value={bankAccountTypeLabel(p.bankAccountType)} />
+        <InfoRow label="Personal / Business" value={bankOwnershipLabel(p.bankOwnershipType)} />
         <InfoRow label="SWIFT (for International)" value={p.swiftCode} />
         <InfoRow label="Routing Number"  value={p.routingNumber} />
       </Section>

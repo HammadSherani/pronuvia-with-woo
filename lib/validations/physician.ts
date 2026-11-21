@@ -59,6 +59,8 @@ const CreatePhysicianBaseSchema = z.object({
   bankAccountName:     z.string().optional(),
   swiftCode:           z.string().optional(),
   routingNumber:       z.string().optional(),
+  bankAccountType:   z.enum(["CHECKING", "SAVINGS"]).optional(),
+  bankOwnershipType: z.enum(["PERSONAL", "BUSINESS"]).optional(),
 });
 
 export const CreatePhysicianSchema = CreatePhysicianBaseSchema.refine(
@@ -96,6 +98,8 @@ export const UpdatePhysicianSchema = z.object({
   bankAccountName:     z.string().optional(),
   swiftCode:           z.string().optional(),
   routingNumber:       z.string().optional(),
+  bankAccountType:   z.enum(["CHECKING", "SAVINGS"]).optional(),
+  bankOwnershipType: z.enum(["PERSONAL", "BUSINESS"]).optional(),
 });
 
 export type CreatePhysicianInput = z.infer<typeof CreatePhysicianSchema>;

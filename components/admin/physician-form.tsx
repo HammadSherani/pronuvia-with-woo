@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { BankTypeFields } from "@/components/admin/bank-type-fields";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -29,6 +30,7 @@ interface PhysicianFormProps {
     fieldsOfSpeciality?: string[]; commission?: number; uplineCommission?: number;
     salesRepId?: string; salesRepName?: string;
     bankName?: string; bankAccountNumber?: string; bankAccountName?: string; swiftCode?: string; routingNumber?: string;
+    bankAccountType?: string; bankOwnershipType?: string;
   };
 }
 
@@ -77,6 +79,8 @@ export function PhysicianForm({
   const [swiftCode, setSwiftCode]             = useState(defaults?.swiftCode ?? "");
   const [bankAccountName, setBankAccountName] = useState(defaults?.bankAccountName ?? "");
   const [routingNumber, setRoutingNumber]     = useState(defaults?.routingNumber ?? "");
+  const [bankAccountType, setBankAccountType] = useState(defaults?.bankAccountType ?? "");
+  const [bankOwnershipType, setBankOwnershipType] = useState(defaults?.bankOwnershipType ?? "");
 
   const allCountries = Country.getAllCountries();
   const statesForCountry = selectedCountry ? State.getStatesOfCountry(selectedCountry) : [];
@@ -119,6 +123,8 @@ export function PhysicianForm({
       if (v.bankName)         setBankName(v.bankName);
       if (v.swiftCode)        setSwiftCode(v.swiftCode);
       if (v.bankAccountName)  setBankAccountName(v.bankAccountName);
+      if (v.bankAccountType)  setBankAccountType(v.bankAccountType);
+      if (v.bankOwnershipType) setBankOwnershipType(v.bankOwnershipType);
       if (v.bankAccountNumber) {
         setAccNum(v.bankAccountNumber);
         setConfirmAccNum(v.bankAccountNumber);
@@ -511,6 +517,11 @@ export function PhysicianForm({
           <input name="bankAccountName" className={icls()} placeholder="Jane Doe"
             value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} />
         </div>
+        <BankTypeFields
+          className="grid grid-cols-2 gap-4 mb-4" labelClass={lbl} selectClass={icls()}
+          accountType={bankAccountType} onAccountType={setBankAccountType}
+          ownership={bankOwnershipType} onOwnership={setBankOwnershipType}
+        />
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className={lbl}>Account Number</label>

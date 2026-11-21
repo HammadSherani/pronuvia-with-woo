@@ -85,6 +85,8 @@ export default async function EditPendingPhysicianPage({ params }: Props) {
           bankAccountName:     p.bankAccountName      ?? undefined,
           swiftCode:           p.swiftCode            ?? undefined,
           routingNumber:       p.routingNumber        ?? undefined,
+          bankAccountType:     p.bankAccountType      ?? undefined,
+          bankOwnershipType:   p.bankOwnershipType    ?? undefined,
         }}
       />
     </div>

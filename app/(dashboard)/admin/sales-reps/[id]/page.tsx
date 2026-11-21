@@ -1,3 +1,4 @@
+import { bankAccountTypeLabel, bankOwnershipLabel } from "@/lib/bank/labels";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/dal";
@@ -120,6 +121,8 @@ export default async function SalesRepViewPage({ params }: Props) {
         <InfoRow label="Bank Name" value={rep.bankName} />
         <InfoRow label="SWIFT (for International)" value={rep.swiftCode} />
         <InfoRow label="Account Name" value={rep.bankAccountName} />
+        <InfoRow label="Account Type" value={bankAccountTypeLabel(rep.bankAccountType)} />
+        <InfoRow label="Personal or Business" value={bankOwnershipLabel(rep.bankOwnershipType)} />
         <InfoRow label="Routing Number" value={rep.routingNumber} />
         <div className="col-span-2">
           <InfoRow label="Account Number" value={rep.bankAccountNumber} />
