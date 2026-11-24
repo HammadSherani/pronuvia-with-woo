@@ -2,16 +2,14 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { parseReviewMeta } from "@/lib/orders/commission-review";
-import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
-import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { reconcileOrderCommission } from "@/lib/commission/lines";
 import { recordCommissionEvent } from "@/lib/orders/commission-history";
 
 /**
  * Commission the admin took back on the WP order page ("Refund commission")
  * after the user's payout of it was approved (paid out). Each refund (by its WP id)
- * applies once: it comes off the wallet, which may go below zero, adds to the
- * order's clawback (so the remaining commission is what is left), and the
- * user's pending payout request follows the wallet. Never more than the
+ * applies once: it adds to the order's clawback (so the remaining commission
+ * is what is left) and comes off the user's next payout as a deduction line. Never more than the
  * commission still standing on the order.
  */
 export async function applyCommissionRefunds(orderId: string, raw: unknown): Promise<number> {
@@ -47,10 +45,6 @@ export async function applyCommissionRefunds(orderId: string, raw: unknown): Pro
         throw e;
       }
 
-      await moveWalletForOrder({
-        role, userId, orderId, delta: -amount,
-        description: `Commission refunded — order #${order.orderNumber}${r.note ? ` (${r.note})` : ""}`,
-      });
       // Set, not increment: an unset (null) clawback does not increment in MongoDB.
       // This refund is claimed above, so no other one adds to it at the same time.
       await prisma.order.update({ where: { id: orderId }, data: { [clawField]: Number(((order[clawField] ?? 0) + amount).toFixed(2)) } });
@@ -59,7 +53,8 @@ export async function applyCommissionRefunds(orderId: string, raw: unknown): Pro
         amount: Number((left - amount).toFixed(2)), previousAmount: left, walletChange: -amount,
         note: r.note, by: r.by, createdAt: r.at && !Number.isNaN(Date.parse(r.at)) ? new Date(r.at) : undefined,
       });
-      await upsertRunningPayoutRequest(userId, role);
+      // Taken off the user's next payout (a deduction line)
+      await reconcileOrderCommission(orderId);
       applied++;
     }
   }

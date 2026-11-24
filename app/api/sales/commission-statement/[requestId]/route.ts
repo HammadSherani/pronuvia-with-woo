@@ -40,9 +40,10 @@ export async function GET(
     userRole: "SALES_REP",
     requestCreatedAt: request.snapshotAt ?? request.createdAt,
     periodKey: request.periodKey,
+    requestId: request.id,
   });
 
-  const period = parsePayoutPeriod(request.note, request.snapshotAt ?? request.createdAt);
+  const period = parsePayoutPeriod(request.note, request.snapshotAt ?? request.createdAt, request.periodKey);
 
   const pdfBuf = await generateCommissionStatementPdf({
     recipientName:   `${rep.firstName} ${rep.lastName}`,

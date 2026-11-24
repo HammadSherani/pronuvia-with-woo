@@ -413,6 +413,57 @@ enum PayoutNotificationStatus {
   FAILED
 }
 
+// ── Commission lines (no wallet) ──
+// Every commission is a line linked to its order, in the order's month
+// (periodKey, America/New_York). A payout request (WithdrawRequest) is one
+// user's PENDING lines of one month; approving it pays exactly those lines.
+//   ORDER       the order's approved commission (what is still to pay; a
+//               paid part stays as its own PAID line)
+//   DEDUCTION   negative: commission taken back after it was paid (order
+//               refund / cancellation, WP "Refund commission"); comes off
+//               the user's next payout
+//   ADJUSTMENT  added by the admin on Commission Adjustment, on an order
+//   OLD_SITE    from the old site's MLM ledger (login2), kept as it was
+enum CommissionLineKind {
+  ORDER
+  DEDUCTION
+  ADJUSTMENT
+  OLD_SITE
+}
+
+enum CommissionLineStatus {
+  PENDING       // to be paid in a payout request
+  NEEDS_REVIEW  // old balance the admin checks first (pay or cancel)
+  PAID
+  CANCELLED     // will not be paid (rejected payout, cancelled old balance)
+}
+
+model CommissionLine {
+  id          String               @id @default(auto()) @map("_id") @db.ObjectId
+  // Unique: "open:<orderId>:<role>" for an order's one open line,
+  // "old:<ledgerId>" for an old-site row, "adj:<uuid>" for an adjustment
+  key         String               @unique
+  userId      String               @db.ObjectId
+  userRole    Role
+  orderId     String?              @db.ObjectId
+  orderNumber String?              // also for old-site rows whose order is not here
+  kind        CommissionLineKind
+  status      CommissionLineStatus @default(PENDING)
+  amount      Float                // signed: a DEDUCTION is negative
+  periodKey   String               // "YYYY-MM": the commission month
+  payoutId    String?              @db.ObjectId   // the WithdrawRequest it is in / was paid by
+  note        String?
+  by          String?
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([userId, userRole, status])
+  @@index([orderId, userRole])
+  @@index([payoutId])
+}
+
 model WithdrawRequest {
   id                       String                   @id @default(auto()) @map("_id") @db.ObjectId
   userId                   String                   @db.ObjectId

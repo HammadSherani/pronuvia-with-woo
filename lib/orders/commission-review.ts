@@ -2,8 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { CommissionReview } from "@/generated/prisma/enums";
 import { addWooOrderNote, updateWooOrder } from "@/lib/woo/orders";
-import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
-import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { reconcileOrderCommission } from "@/lib/commission/lines";
 import { recordCommissionEvent } from "./commission-history";
 
 // Commission review: each order's commission (doctor, sales rep) is approved,
@@ -222,20 +221,14 @@ export async function applyCommissionReview(orderId: string, raw: unknown): Prom
     order.commissionReviewNotes = notes as typeof order.commissionReviewNotes;
     changed = true;
 
-    // In payout: the wallet follows the new decision
+    // In payout: what the commission line changes by
     const userId = order[f.user];
     const clawback = order[f.clawback] as number | null;
     const delta = order.commissionPaid && userId
       ? Number((commissionNet(next, amount, clawback) - commissionNet(review, current, clawback)).toFixed(2))
       : 0;
-    if (delta !== 0 && userId) {
-      const what = e.status === "rejected" ? "rejected" : amount !== current ? `changed to $${amount.toFixed(2)}` : "approved";
-      await moveWalletForOrder({
-        role: f.role, userId, orderId, delta,
-        description: `Commission adjusted — order #${order.orderNumber} (${what}${e.note ? `: ${e.note}` : ""})`,
-      });
-      await upsertRunningPayoutRequest(userId, f.role);
-    }
+    // In payout: the order's commission line follows the new decision
+    if (delta !== 0 && userId) await reconcileOrderCommission(orderId);
 
     // History: the wallet change goes on the newest action; an older plugin
     // without history gets one row for the change seen here

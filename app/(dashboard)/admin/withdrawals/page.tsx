@@ -7,6 +7,8 @@ import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { wpAdmin } from "@/lib/woo/admin-links";
 import { payoutsLocked } from "@/lib/withdrawals/lock";
 import { countUsersToNotify } from "@/actions/admin/notify-bank";
+import { periodLabel } from "@/lib/commission/lines";
+import type { NeedsReviewEntry } from "@/components/admin/needs-review-section";
 
 export const metadata = { title: "Commission Payout – Pronuvia Admin" };
 
@@ -30,17 +32,17 @@ export default async function CommissionPayoutPage() {
     currentMonthDocOrders,
     currentMonthRefunds,
   ] = await Promise.all([
-    // PENDING payout requests (previous months)
+    // PENDING payout requests: one per user and commission month, oldest month first
     prisma.withdrawRequest.findMany({
       where:   { status: "PENDING" },
-      orderBy: { createdAt: "desc" },
-      select:  { id: true, userId: true, userRole: true, amount: true, note: true, createdAt: true },
+      orderBy: [{ periodKey: "asc" }, { createdAt: "desc" }],
+      select:  { id: true, userId: true, userRole: true, amount: true, note: true, createdAt: true, periodKey: true },
     }),
     // REJECTED payout requests
     prisma.withdrawRequest.findMany({
       where:   { status: "REJECTED" },
       orderBy: { createdAt: "desc" },
-      select:  { id: true, userId: true, userRole: true, amount: true, note: true, adminNote: true, createdAt: true },
+      select:  { id: true, userId: true, userRole: true, amount: true, note: true, adminNote: true, createdAt: true, periodKey: true },
     }),
     // Sales rep commissions awaiting the admin's review (WP order page), any month
     prisma.order.findMany({
@@ -159,21 +161,9 @@ export default async function CommissionPayoutPage() {
           select: { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true, bankNotifyRequested: true },
         })
       : [],
-    // Commission-paid orders for payout modal (Show Orders)
-    withdrawRepIds.length
-      ? prisma.order.findMany({
-          where:   { salesRepId: { in: withdrawRepIds }, commissionPaid: true },
-          select:  { salesRepId: true, orderNumber: true, createdAt: true, salesRepCommissionAmount: true, salesRepCommissionRate: true },
-          orderBy: { createdAt: "desc" },
-        })
-      : [],
-    withdrawDocIds.length
-      ? prisma.order.findMany({
-          where:   { physicianId: { in: withdrawDocIds }, commissionPaid: true },
-          select:  { physicianId: true, orderNumber: true, createdAt: true, physicianCommissionAmount: true, physicianCommissionRate: true },
-          orderBy: { createdAt: "desc" },
-        })
-      : [],
+    // A payout's orders are its commission lines (shown on its detail page)
+    [] as { salesRepId: string | null; orderNumber: string; createdAt: Date; salesRepCommissionAmount: number; salesRepCommissionRate: number }[],
+    [] as { physicianId: string | null; orderNumber: string; createdAt: Date; physicianCommissionAmount: number; physicianCommissionRate: number }[],
   ]);
 
   const repMap = new Map(reps.map((r) => [r.id, r]));
@@ -206,7 +196,7 @@ export default async function CommissionPayoutPage() {
     const orders = r.userRole === "PHYSICIAN" ? (docOrderMap.get(r.userId) ?? []) : (repOrderMap.get(r.userId) ?? []);
     return [{
       id: r.id, userId: r.userId, userRole: r.userRole as "PHYSICIAN" | "SALES_REP",
-      amount: r.amount, note: r.note, createdAt: r.createdAt.toISOString(),
+      amount: r.amount, note: r.note, createdAt: r.createdAt.toISOString(), periodKey: r.periodKey,
       user: user as UserInfo, orders,
     }];
   });
@@ -216,7 +206,7 @@ export default async function CommissionPayoutPage() {
     if (!user) return [];
     return [{
       id: r.id, userId: r.userId, userRole: r.userRole as "PHYSICIAN" | "SALES_REP",
-      amount: r.amount, note: r.note, adminNote: r.adminNote, createdAt: r.createdAt.toISOString(),
+      amount: r.amount, note: r.note, adminNote: r.adminNote, createdAt: r.createdAt.toISOString(), periodKey: r.periodKey,
       user: user as UserInfo,
     }];
   });
@@ -437,11 +427,34 @@ export default async function CommissionPayoutPage() {
     }),
   ].sort((a, b) => b.totalRejectedCommission - a.totalRejectedCommission);
 
+  // ── Needs review: old-site commission up to 12/31/2025 ────────────────────
+  const reviewLines = await prisma.commissionLine.findMany({
+    where:   { status: "NEEDS_REVIEW" },
+    select:  { id: true, userId: true, userRole: true, orderNumber: true, amount: true, note: true, periodKey: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const reviewRepIds = [...new Set(reviewLines.filter((l) => l.userRole === "SALES_REP" && !repMap.has(l.userId)).map((l) => l.userId))];
+  const reviewDocIds = [...new Set(reviewLines.filter((l) => l.userRole === "PHYSICIAN" && !docMap.has(l.userId)).map((l) => l.userId))];
+  const bankFields = { id: true, firstName: true, lastName: true, email: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true, bankNotifyRequested: true } as const;
+  if (reviewRepIds.length) for (const r of await prisma.salesRepresentative.findMany({ where: { id: { in: reviewRepIds } }, select: bankFields })) repMap.set(r.id, r);
+  if (reviewDocIds.length) for (const d of await prisma.partneringPhysician.findMany({ where: { id: { in: reviewDocIds } }, select: bankFields })) docMap.set(d.id, d);
+  const reviewByUser = new Map<string, NeedsReviewEntry>();
+  for (const l of reviewLines) {
+    const role = l.userRole as "PHYSICIAN" | "SALES_REP";
+    const user = role === "PHYSICIAN" ? docMap.get(l.userId) : repMap.get(l.userId);
+    const k = `${l.userId}:${role}`;
+    const e = reviewByUser.get(k) ?? { userId: l.userId, userRole: role, userName: user ? `${user.firstName} ${user.lastName}` : "Unknown", userEmail: user?.email ?? "", total: 0, lines: [] };
+    e.lines.push({ id: l.id, orderNumber: l.orderNumber, date: l.createdAt.toISOString(), periodLabel: periodLabel(l.periodKey), amount: l.amount, note: l.note });
+    e.total = Math.round((e.total + l.amount) * 100) / 100;
+    reviewByUser.set(k, e);
+  }
+  const needsReview = [...reviewByUser.values()].sort((a, b) => b.total - a.total);
+
   return (
     <div>
       <PageHeader
         title="Commission Payout"
-        description="Review and approve monthly commission payouts for Medical Reps and Doctors"
+        description="Pay commission month by month: each payout is one person's approved commission for one month"
       />
       <CommissionPayoutClient
         pending={pending}
@@ -451,6 +464,7 @@ export default async function CommissionPayoutPage() {
         monthLabel={monthLabel}
         locked={payoutsLocked()}
         notifyAllCount={await countUsersToNotify()}
+        needsReview={needsReview}
       />
     </div>
   );

@@ -4,10 +4,8 @@ import { OrderStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/db/prisma";
 import { sendMail } from "@/lib/email/mailer";
 import { orderRefundEmail } from "@/lib/email/templates";
-import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
-import { syncPendingPayoutRequest } from "@/lib/withdrawals/sync";
-import { moveWallet, moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
-import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
+import { reconcileOrderCommission } from "@/lib/commission/lines";
+import { addOwedToUser } from "@/lib/commission/adjustments";
 import { getWooRefund, REFUND_ID_KEY, updateWooOrder, type WooOrderDetail } from "@/lib/woo/orders";
 import { commissionNet, CUTS_META_KEY, reviewManaged } from "./commission-review";
 import { recordCommissionEvent } from "./commission-history";
@@ -24,14 +22,10 @@ import { rejectAwaitingCommission } from "./commission-cancel";
 //
 // Commission follows the order: a refund cuts each role's commission by the
 // refunded share of the items (a full refund cuts all of it), at any stage.
-// Commission already in the wallet comes off it (below zero if it was paid
-// out already); a rejected one has nothing in the wallet, only its amount is
-// cut for when it is approved. Each cut is in the Commission History, and the
-// WP Commissions box shows it (CUTS_META_KEY).
-//
-// Commission: until the monthly sweep the clawback only lowers what the sweep
-// credits (it credits commission − clawback); after it, the clawback is taken
-// from the wallet in the current period.
+// Unpaid commission goes down; commission already paid out comes off the
+// user's next payout (a deduction line, lib/commission/lines); a rejected one
+// only has its amount cut for when it is approved. Each cut is in the
+// Commission History, and the WP Commissions box shows it (CUTS_META_KEY).
 
 export type RefundLine  = { index: number; returnedQty: number };
 export type StoredRefundItem = { index: number; returnedQty: number; lineTotal: number };
@@ -150,41 +144,28 @@ async function record(order: RefundOrder, p: Plan, opts: {
     throw e;
   }
 
-  const period = getCurrentPeriod(new Date(), process.env.PAYOUT_TIMEZONE ?? "UTC");
-
-  // Wallet orders get the money back on the wallet that paid
+  // An order paid with wallet credit (before the wallet was removed): the
+  // money goes back to the payer with their next payout
   if (opts.method === "wallet" && opts.amount > 0) {
     const payer = order.physicianId
       ? { role: "PHYSICIAN" as const, id: order.physicianId }
       : order.salesRepId ? { role: "SALES_REP" as const, id: order.salesRepId } : null;
     if (payer) {
-      const balance = await moveWallet(payer.role, payer.id, opts.amount);
-      await prisma.walletTransaction.create({
-        data: {
-          userId: payer.id, userRole: payer.role, amount: opts.amount, type: "CREDIT",
-          description: `Refund #${opts.refundNumber} on order #${order.orderNumber}`,
-          orderId: order.id, periodKey: period.key, balance,
-        },
+      await addOwedToUser({
+        userId: payer.id, userRole: payer.role, orderId: order.id, orderNumber: order.orderNumber, amount: opts.amount,
+        note: `Refund #${opts.refundNumber} on order #${order.orderNumber} (paid with wallet credit)`, key: `wallet-refund:${refund.id}`,
       });
-      await syncPendingPayoutRequest(payer.id, payer.role, balance);
     }
   }
 
-  // Commission in the wallet (in payout or paid out): the approved part of
-  // the cut comes off it now (negative balance allowed)
+  // Commission in payout or paid out: what the cut takes off it (the
+  // commission line is brought in step below, after the order is saved)
   for (const [role, id, cut, amount, claw, review] of [
     ["SALES_REP", order.salesRepId, salesRepClawback, order.salesRepCommissionAmount, order.salesRepClawback, order.salesRepCommissionReview],
     ["PHYSICIAN", order.physicianId, physicianClawback, order.physicianCommissionAmount, order.physicianClawback, order.physicianCommissionReview],
   ] as const) {
     if (!id || cut <= 0) continue;
     const debit = order.commissionPaid ? round2(commissionNet(review, amount, claw) - commissionNet(review, amount, (claw ?? 0) + cut)) : 0;
-    if (debit > 0) {
-      await moveWalletForOrder({
-        role, userId: id, orderId: order.id, delta: -debit,
-        description: `Commission cut — refund #${opts.refundNumber} on order #${order.orderNumber}`,
-      });
-      await upsertRunningPayoutRequest(id, role);
-    }
     const before = round2(Math.max(0, amount - (claw ?? 0)));
     await recordCommissionEvent({
       key: `order-refund:${refund.id}:${role}`, orderId: order.id, userRole: role, action: "ORDER_REFUND",
@@ -218,6 +199,9 @@ async function record(order: RefundOrder, p: Plan, opts: {
 
   // Fully refunded: commission still awaiting review is rejected too
   if (p.isFull) await rejectAwaitingCommission(order.id, "refunded");
+  // The commission lines follow the cut: unpaid commission goes down, paid
+  // commission comes off the user's next payout
+  await reconcileOrderCommission(order.id);
 
   await refundEmail(order, p, opts.amount, opts.reason);
   return { id: refund.id, salesRepClawback, physicianClawback };

@@ -2,18 +2,16 @@ import "server-only";
 import { prisma } from "@/lib/db/prisma";
 import { commissionNet } from "@/lib/orders/commission-review";
 import { markCommissionPaidInWoo } from "@/lib/orders/commission-paid";
-import { upsertRunningPayoutRequest } from "@/lib/withdrawals/running-request";
-import { moveWalletForOrder } from "@/lib/withdrawals/wallet-move";
+import { reconcileOrderCommission } from "@/lib/commission/lines";
 import { recordCommissionEvent } from "@/lib/orders/commission-history";
 
 /**
- * Puts an order's commission into the wallets as soon as the admin has
- * reviewed every commission on it (WP order page): approved roles get their
- * commission less any refund clawback, rejected ones nothing. The order is
- * then commissionPaid ("in payout", commissionCreditedAt) and each user's
- * pending payout request grows to their wallet balance. Until that payout is
- * approved the review can still change on WP (applyCommissionReview moves
- * the wallet by the difference).
+ * Puts an order's commission into Commission Payout as soon as the admin has
+ * reviewed every commission on it (WP order page): approved roles get a
+ * commission line (less any refund cut) in the payout of the order's month,
+ * rejected ones nothing. The order is then commissionPaid ("in payout",
+ * commissionCreditedAt). Until that payout is approved the review can still
+ * change on WP (applyCommissionReview re-reconciles the line).
  * Does nothing while a commission still awaits review, or for a cancelled /
  * refunded order. Safe to call repeatedly: the commissionPaid claim makes it
  * credit once.
@@ -46,11 +44,11 @@ export async function creditReviewedOrder(orderId: string): Promise<boolean> {
   });
   if (claimed.count !== 1) return false;
 
+  // Into Commission Payout: the order's commission lines, in the order's month
+  await reconcileOrderCommission(order.id);
   for (const r of roles) {
     const net = commissionNet(r.review, r.amount, r.clawback);
     if (net <= 0) continue;
-    await moveWalletForOrder({ role: r.role, userId: r.id!, orderId: order.id, delta: net, description: `Commission for order #${order.orderNumber}` });
-    await upsertRunningPayoutRequest(r.id!, r.role);
     await recordCommissionEvent({ key: `in-payout:${order.id}:${r.role}`, orderId: order.id, userRole: r.role, action: "IN_PAYOUT", amount: r.amount, walletChange: net });
   }
 

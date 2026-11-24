@@ -71,8 +71,9 @@ export async function sendPayoutApprovalEmail(
       userRole: request.userRole,
       requestCreatedAt: snapshotAt,
       periodKey: request.periodKey,
+      requestId: request.id,
     });
-    const period = parsePayoutPeriod(request.note, snapshotAt);
+    const period = parsePayoutPeriod(request.note, snapshotAt, request.periodKey);
     const pdfOrders = orders.map((order) => ({
       orderNumber: order.orderNumber,
       createdAt: order.createdAt.toISOString(),

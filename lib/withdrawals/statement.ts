@@ -23,10 +23,49 @@ export async function getPayoutStatementOrders(opts: {
   userRole: Role;
   requestCreatedAt: Date;
   periodKey?: string | null;
+  /** The payout request: its commission lines are the statement (older payouts have none) */
+  requestId?: string;
 }): Promise<PayoutStatementOrder[]> {
+  if (opts.requestId) {
+    const fromLines = await lineStatementOrders(opts.requestId, opts.userRole);
+    if (fromLines) return fromLines;
+  }
   const paid = await paidStatementOrders(opts);
   const unpaid = await unpaidPeriodOrders(opts, new Set(paid.map((o) => o.orderNumber)));
   return [...paid, ...unpaid].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+const LINE_LABEL: Record<string, string> = {
+  ORDER: "Commission", DEDUCTION: "Taken back (refund / cancellation after payout)", ADJUSTMENT: "Adjustment", OLD_SITE: "Commission (old site)",
+};
+
+/**
+ * A payout made from commission lines: exactly its lines, each with its order
+ * (deductions and adjustments as their own rows). Null when the request has
+ * no lines (a payout from before the lines, or imported from the old site).
+ */
+async function lineStatementOrders(requestId: string, userRole: Role): Promise<PayoutStatementOrder[] | null> {
+  const lines = await prisma.commissionLine.findMany({
+    where:   { payoutId: requestId, status: { in: ["PENDING", "PAID"] } },
+    select:  { orderId: true, orderNumber: true, kind: true, amount: true, note: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!lines.length) return null;
+  const ids = [...new Set(lines.map((l) => l.orderId).filter((x): x is string => !!x))];
+  const orders = new Map((await prisma.order.findMany({
+    where:  { id: { in: ids } },
+    select: { id: true, createdAt: true, physicianCommissionRate: true, salesRepCommissionRate: true },
+  })).map((o) => [o.id, o]));
+  return lines.map((l) => {
+    const o = l.orderId ? orders.get(l.orderId) : undefined;
+    return {
+      orderNumber: l.orderNumber ?? "—",
+      createdAt:   o?.createdAt ?? l.createdAt,
+      amount:      Math.round(l.amount * 100) / 100,
+      rate:        o ? (userRole === "PHYSICIAN" ? o.physicianCommissionRate : o.salesRepCommissionRate) : 0,
+      description: l.kind === "ORDER" ? null : `${LINE_LABEL[l.kind]}${l.note ? ` · ${l.note}` : ""}`,
+    };
+  }).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }
 
 /**

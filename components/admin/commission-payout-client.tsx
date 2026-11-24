@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { updateWithdrawRequest, bulkUpdateWithdrawals } from "@/actions/admin/manage-withdrawals";
 import { notifyUserAddBank, notifyAllWithoutBank } from "@/actions/admin/notify-bank";
+import { NeedsReviewSection, type NeedsReviewEntry } from "@/components/admin/needs-review-section";
 import { formatDate, formatMonthYear } from "@/lib/utils/timezone";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -41,6 +42,8 @@ export type PendingRow = {
   amount:    number;
   note:      string | null;
   createdAt: string;
+  /** The commission month ("2026-10") */
+  periodKey?: string | null;
   user:      UserInfo;
   orders:    OrderRow[];
 };
@@ -53,6 +56,7 @@ export type RejectedRow = {
   note:      string | null;
   adminNote: string | null;
   createdAt: string;
+  periodKey?: string | null;
   user:      UserInfo;
 };
 
@@ -86,6 +90,8 @@ interface Props {
   locked?:      boolean;
   /** Users with a pending payout, no bank details and not asked yet ("Notify all") */
   notifyAllCount?: number;
+  /** Old-site commission dated on or before 12/31/2025, checked by the admin first */
+  needsReview?: NeedsReviewEntry[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,7 +100,9 @@ function fmt(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-function parsePeriod(note: string | null, createdAt: string): string {
+function parsePeriod(note: string | null, createdAt: string, periodKey?: string | null): string {
+  const key = periodKey?.match(/^(\d{4})-(\d{2})$/);
+  if (key) return new Date(Date.UTC(Number(key[1]), Number(key[2]) - 1, 15)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   if (note) {
     const m = note.match(/Auto withdrawal\s*[–-]\s*(.+)/i);
     if (m) return m[1].trim();
@@ -222,12 +230,12 @@ function ActionModal({
 }) {
   const [note, setNote]         = useState("");
   const [busy, startTransition] = useTransition();
-  const period                  = parsePeriod(row.note, row.createdAt);
+  const period                  = parsePeriod(row.note, row.createdAt, row.periodKey);
   const isApprove               = action === "APPROVED";
 
   const handle = () => {
     startTransition(async () => {
-      const res = await updateWithdrawRequest(row.id, action, note);
+      const res = await updateWithdrawRequest(row.id, action, note, isApprove ? row.amount : undefined);
       if (res?.success) {
         toast.success(isApprove
           ? `Approved ${fmt(row.amount)} — email + PDF sent to ${row.user.email}`
@@ -249,11 +257,11 @@ function ActionModal({
         <p className="text-sm text-gray-500 mb-4">
           {isApprove
             ? `Approve ${fmt(row.amount)} commission payout for ${row.user.firstName} ${row.user.lastName} (${period})?`
-            : `Reject the ${fmt(row.amount)} commission request for ${row.user.firstName} ${row.user.lastName}?`}
+            : `Reject the ${fmt(row.amount)} commission payout for ${row.user.firstName} ${row.user.lastName} (${period})? Its commission will not be paid; any deduction in it moves to the next payout.`}
         </p>
         {isApprove && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 mb-4 text-xs text-emerald-700 font-medium">
-            Commission balance will be deducted and a PDF statement will be emailed to {row.user.email}
+            The commission in this payout is marked paid and a PDF statement is emailed to {row.user.email}
           </div>
         )}
         <div className="mb-5">
@@ -338,7 +346,7 @@ function BulkApproveModal({
         <p className="text-sm text-gray-500 mb-4">
           Approve <span className="font-semibold text-gray-800">{count} request{count !== 1 ? "s" : ""}</span> totalling{" "}
           <span className="font-semibold text-emerald-600">{fmt(totalAmount)}</span>?
-          Each user&apos;s commission balance will be deducted.
+          The commission in each payout is marked paid and its statement is emailed.
         </p>
         <div className="flex gap-3">
           <button type="button" onClick={onClose} disabled={busy}
@@ -414,7 +422,7 @@ function TablePagination({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false, notifyAllCount = 0 }: Props) {
+export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false, notifyAllCount = 0, needsReview = [] }: Props) {
   const [pending,      setPending]     = useState(initialPending);
   const [selected,     setSelected]    = useState<Set<string>>(new Set());
   const [bulkModal,    setBulkModal]   = useState(false);
@@ -434,7 +442,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
 
   // Everything the approval needs (incl. checking/savings, personal/business)
   const hasBank       = (r: PendingRow) => bankDetailsComplete(r.user);
-  const bankRows      = pending.filter(hasBank);
+  const bankRows      = pending.filter((r) => hasBank(r) && r.amount > 0);
   const allBankSel    = bankRows.length > 0 && bankRows.every((r) => selected.has(r.id));
   const someSel       = selected.size > 0 && !allBankSel;
   const toggleSelect  = (id: string, hasBankAcc: boolean) => {
@@ -454,7 +462,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
   const handleBulkApprove = () => {
     const ids = selectedRows.map((r) => r.id);   // only bank-account rows
     startBulk(async () => {
-      const res = await bulkUpdateWithdrawals(ids, "APPROVED");
+      const res = await bulkUpdateWithdrawals(ids, "APPROVED", Object.fromEntries(selectedRows.map((r) => [r.id, r.amount])));
       if (res.success) {
         toast.success(res.message);
         removeRows(ids);
@@ -506,7 +514,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
         </div>
       )}
 
-      {/* ══ 1. Commission Payout (pending withdraw requests — previous months) ═ */}
+      {/* ══ 1. Commission Payout (one request per user and commission month) ══ */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <SectionHeader
@@ -596,7 +604,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {pagedPending.map((row) => {
-                    const period    = parsePeriod(row.note, row.createdAt);
+                    const period    = parsePeriod(row.note, row.createdAt, row.periodKey);
                     const rowHasBank = hasBank(row);
                     const isChecked  = selected.has(row.id);
                     return (
@@ -644,7 +652,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                         </td>
                         {/* Amount */}
                         <td className="px-5 py-3.5 text-right">
-                          <span className="text-base font-black text-gray-800">{fmt(row.amount)}</span>
+                          <span className={`text-base font-black ${row.amount < 0 ? "text-red-600" : "text-gray-800"}`}>{fmt(row.amount)}</span>
+                          {row.amount <= 0 && <p className="text-[11px] text-gray-400">Deduction, taken off the next payout</p>}
                         </td>
                         {/* Actions */}
                         <td className="px-5 py-3.5">
@@ -683,8 +692,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                             <button
                               type="button"
                               onClick={() => setActionModal({ row, action: "APPROVED" })}
-                              disabled={locked}
-                              title={locked ? "Payouts are locked" : undefined}
+                              disabled={locked || row.amount <= 0}
+                              title={locked ? "Payouts are locked" : row.amount <= 0 ? "Only deductions: they come off this user's next payout" : undefined}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-500"
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -723,6 +732,9 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
           )}
         </div>
       </div>
+
+      {/* ══ Needs review: old-site commission up to 12/31/2025 ══ */}
+      <NeedsReviewSection entries={needsReview} />
 
       {/* ══ 2. Pending Commission (not yet approved on the WP order page) ══ */}
       <div className="mb-8">
@@ -913,7 +925,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                       <p className="text-[11px] text-gray-400 truncate">{r.user.email}</p>
                     </td>
                     <td className="px-4 py-3"><RoleBadge role={r.userRole} /></td>
-                    <td className="px-4 py-3 text-xs text-gray-600 font-medium">{parsePeriod(r.note, r.createdAt)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-600 font-medium">{parsePeriod(r.note, r.createdAt, r.periodKey)}</td>
                     <td className="px-4 py-3 text-sm font-bold text-gray-700">{fmt(r.amount)}</td>
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {formatDate(r.createdAt, { year: "2-digit" })}

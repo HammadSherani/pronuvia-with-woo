@@ -5,7 +5,7 @@ import { prisma }                                  from "@/lib/db/prisma";
 import { requireAdmin }                            from "@/lib/auth/dal";
 import { sendPayoutApprovalEmail, type ApprovedPayoutRequest } from "@/lib/withdrawals/notifications";
 import { markCommissionPaidOutInWoo }            from "@/lib/orders/commission-paid";
-import { lockPaidOutCommission }                 from "@/lib/withdrawals/paid-out";
+import { approvePayout, rejectPayout, type DecidedPayout } from "@/lib/commission/payout";
 import { payoutsLocked, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
 
 export type WithdrawalActionState = {
@@ -13,100 +13,19 @@ export type WithdrawalActionState = {
   message?: string;
 } | undefined;
 
+// Pays (approve) or turns down (reject) one payout request through its
+// commission lines (lib/commission/payout). Locked while PAYOUTS_LOCKED is on.
 async function applyWithdrawDecision(
   requestId: string,
   action: "APPROVED" | "REJECTED",
   adminNote: string | undefined,
-  description: string,
-): Promise<(ApprovedPayoutRequest & { paidOutOrderIds: string[] }) | null> {
+  expectedAmount?: number,
+): Promise<DecidedPayout | null> {
   // Checked here so every way of approving (single, bulk, detail page) is covered
   if (action === "APPROVED" && payoutsLocked()) throw new Error(PAYOUTS_LOCKED_MESSAGE);
-  const result = await prisma.$transaction(async (tx) => {
-    const request = await tx.withdrawRequest.findUnique({
-      where: { id: requestId },
-      select: {
-        id: true, status: true, amount: true, userId: true, userRole: true,
-        note: true, createdAt: true, snapshotAt: true, periodKey: true,
-      },
-    });
-
-    if (!request || request.status !== "PENDING") return null;
-    if (action === "APPROVED" && request.amount <= 0) {
-      throw new Error("Payout amount must be greater than zero.");
-    }
-
-    // Claim the request first. A second admin click can no longer deduct the
-    // wallet or send a second email once this conditional update succeeds.
-    const claimed = await tx.withdrawRequest.updateMany({
-      where: { id: requestId, status: "PENDING" },
-      data: {
-        status: action,
-        adminNote: adminNote?.trim() || null,
-        ...(action === "APPROVED"
-          ? {
-              notificationStatus: "PENDING",
-              notificationAttempts: 0,
-              notificationLastAttemptAt: null,
-              notificationLastError: null,
-            }
-          : {}),
-      },
-    });
-    if (claimed.count !== 1) return null;
-
-    if (action === "APPROVED") {
-      if (request.userRole === "SALES_REP") {
-        const rep = await tx.salesRepresentative.findUnique({
-          where: { id: request.userId },
-          select: { walletBalance: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true },
-        });
-        if (!rep?.bankName || !rep.bankAccountNumber || !rep.bankAccountName || !rep.bankAccountType || !rep.bankOwnershipType) {
-          throw new Error("User has incomplete bank account details.");
-        }
-        const updated = await tx.salesRepresentative.updateMany({
-          where: { id: request.userId, walletBalance: { gte: request.amount } },
-          data: { walletBalance: { decrement: request.amount } },
-        });
-        if (updated.count !== 1) throw new Error("Wallet balance is lower than the payout amount.");
-        const after = await tx.salesRepresentative.findUnique({ where: { id: request.userId }, select: { walletBalance: true } });
-        await tx.walletTransaction.create({
-          data: { userId: request.userId, userRole: request.userRole, amount: request.amount, type: "DEBIT", description, balance: after?.walletBalance ?? 0 },
-        });
-      } else {
-        const physician = await tx.partneringPhysician.findUnique({
-          where: { id: request.userId },
-          select: { walletBalance: true, bankName: true, bankAccountNumber: true, bankAccountName: true, bankAccountType: true, bankOwnershipType: true },
-        });
-        if (!physician?.bankName || !physician.bankAccountNumber || !physician.bankAccountName || !physician.bankAccountType || !physician.bankOwnershipType) {
-          throw new Error("User has incomplete bank account details.");
-        }
-        const updated = await tx.partneringPhysician.updateMany({
-          where: { id: request.userId, walletBalance: { gte: request.amount } },
-          data: { walletBalance: { decrement: request.amount } },
-        });
-        if (updated.count !== 1) throw new Error("Wallet balance is lower than the payout amount.");
-        const after = await tx.partneringPhysician.findUnique({ where: { id: request.userId }, select: { walletBalance: true } });
-        await tx.walletTransaction.create({
-          data: { userId: request.userId, userRole: request.userRole, amount: request.amount, type: "DEBIT", description, balance: after?.walletBalance ?? 0 },
-        });
-      }
-    }
-
-    // The commission in this payout is paid out: its WP review is fixed now
-    const paidOutOrderIds = action === "APPROVED" ? await lockPaidOutCommission(tx, request) : [];
-
-    return {
-      paidOutOrderIds,
-      id: request.id,
-      amount: request.amount,
-      userId: request.userId,
-      userRole: request.userRole,
-      note: request.note,
-      createdAt: request.createdAt,
-      snapshotAt: request.snapshotAt,
-      periodKey: request.periodKey,
-    };
-  });
+  const result = action === "APPROVED"
+    ? await approvePayout(requestId, { adminNote, expectedAmount })
+    : await rejectPayout(requestId, { adminNote });
   // Tell the WP Commissions box (best effort: Pronuvia ignores changes to paid-out commission anyway)
   if (result?.paidOutOrderIds.length) await markCommissionPaidOutInWoo(result.paidOutOrderIds);
   return result;
@@ -116,12 +35,14 @@ export async function updateWithdrawRequest(
   requestId: string,
   action:    "APPROVED" | "REJECTED",
   adminNote?: string,
+  /** The amount the admin saw: the payout is refused if it changed since */
+  expectedAmount?: number,
 ): Promise<WithdrawalActionState> {
   await requireAdmin();
 
   let request: ApprovedPayoutRequest | null;
   try {
-    request = await applyWithdrawDecision(requestId, action, adminNote, "Paid Commission");
+    request = await applyWithdrawDecision(requestId, action, adminNote, expectedAmount);
   } catch (error) {
     return { success: false, message: error instanceof Error ? error.message : "Failed to update payout request." };
   }
@@ -163,6 +84,8 @@ export async function deleteWithdrawRequest(
 export async function bulkUpdateWithdrawals(
   ids:    string[],
   action: "APPROVED" | "REJECTED",
+  /** The amounts the admin saw, by request id */
+  expected?: Record<string, number>,
 ): Promise<{ success: boolean; processed: number; failed: number; message: string }> {
   await requireAdmin();
 
@@ -177,7 +100,7 @@ export async function bulkUpdateWithdrawals(
 
   for (const id of ids) {
     try {
-      const request = await applyWithdrawDecision(id, action, undefined, "Paid Commission");
+      const request = await applyWithdrawDecision(id, action, undefined, expected?.[id]);
       if (!request) { failed++; continue; }
 
       if (action === "APPROVED") {
@@ -208,7 +131,7 @@ export async function bulkUpdateWithdrawals(
     processed,
     failed,
     message:   failed > 0
-      ? `${processed} ${verb}, ${failed} skipped (already processed).${notificationMessage}`
+      ? `${processed} ${verb}, ${failed} skipped (already processed, changed, or missing bank details).${notificationMessage}`
       : `${processed} request${processed !== 1 ? "s" : ""} ${verb} successfully.${notificationMessage}`,
   };
 }

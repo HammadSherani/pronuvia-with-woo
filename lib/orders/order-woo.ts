@@ -2,14 +2,14 @@ import "server-only";
 import { Country, State } from "country-state-city";
 import { prisma } from "@/lib/db/prisma";
 import { OrderStatus } from "@/generated/prisma/enums";
-import { reverseOrderCommissionIfPaid } from "@/lib/withdrawals/commission-sweep";
+import { reconcileOrderCommission } from "@/lib/commission/lines";
 import {
   addWooOrderNote, getWooOrder, updateWooOrder, type WooOrderAddress, type WooOrderDetail,
 } from "@/lib/woo/orders";
 import { fromWooStatus, STATUS_META_KEY, toWooStatus } from "./woo-status";
 import { applyWooLabels, carrierName, LABELS_META_KEY, parseWooLabels } from "./woo-labels";
 import { importWooRefunds } from "./refunds";
-import { applyCommissionReview, REVIEW_META_KEY, reviewManaged } from "./commission-review";
+import { applyCommissionReview, REVIEW_META_KEY } from "./commission-review";
 import { creditReviewedOrder } from "@/lib/withdrawals/credit-order";
 import { rejectAwaitingCommission } from "./commission-cancel";
 import { applyCommissionRefunds } from "@/lib/withdrawals/commission-refund";
@@ -129,32 +129,14 @@ export async function applyStatusLocally(orderId: string, status: OrderStatus): 
     },
   });
 
-  // Commission is credited by the monthly sweep, which skips cancelled and
-  // refunded orders. One already swept and now cancelled / refunded is
-  // reversed here (a no-op otherwise), same math as the Refund flow.
-  // Commission paid through the WP review is only taken back by the admin
-  // ("Refund commission" on the WP order page), never here.
-  const reversal = (status === OrderStatus.CANCELLED || status === OrderStatus.REFUNDED) && !reviewManaged(order)
-    ? await reverseOrderCommissionIfPaid(order, status)
-    : { reversed: false, newSalesRepClawback: order.salesRepClawback, newPhysicianClawback: order.physicianClawback };
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status,
-      ...(reversal.reversed && {
-        commissionPaid:    false,
-        salesRepClawback:  reversal.newSalesRepClawback,
-        physicianClawback: reversal.newPhysicianClawback,
-        returnedAt:        order.returnedAt ?? new Date(),
-        returnReason:      order.returnReason ?? `Order ${status === OrderStatus.CANCELLED ? "cancelled" : "refunded"} after commission was paid`,
-      }),
-    },
-  });
+  await prisma.order.update({ where: { id: orderId }, data: { status } });
 
   // A cancelled / refunded order's commission still awaiting review is rejected
   if (status === OrderStatus.CANCELLED && order.status !== OrderStatus.CANCELLED) await rejectAwaitingCommission(orderId, "cancelled");
   if (status === OrderStatus.REFUNDED && order.status !== OrderStatus.REFUNDED) await rejectAwaitingCommission(orderId, "refunded");
+  // Its commission lines follow: unpaid commission is dropped, paid commission
+  // comes off the user's next payout (and comes back if the order is un-cancelled)
+  if (status !== order.status) await reconcileOrderCommission(orderId);
 }
 
 // ── reads ──

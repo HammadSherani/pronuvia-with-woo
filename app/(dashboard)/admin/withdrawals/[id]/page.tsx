@@ -86,6 +86,7 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
     userRole:         request.userRole,
     requestCreatedAt: request.snapshotAt ?? request.createdAt,
     periodKey:        request.periodKey,
+    requestId: request.id,
   });
   const details = await prisma.order.findMany({
     where:  { orderNumber: { in: statement.map((o) => o.orderNumber) } },

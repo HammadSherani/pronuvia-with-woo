@@ -87,7 +87,10 @@ export function monthlyPayoutRequestId(userId: string, userRole: PayoutRole, per
     .slice(0, 24);
 }
 
-export function parsePayoutPeriod(note: string | null | undefined, fallbackDate: Date): string {
+/** The commission month a payout is for: its periodKey ("2026-10" → "October 2026"), else the older note / date. */
+export function parsePayoutPeriod(note: string | null | undefined, fallbackDate: Date, periodKey?: string | null): string {
+  const key = periodKey?.match(/^(\d{4})-(\d{2})$/);
+  if (key) return new Date(Date.UTC(Number(key[1]), Number(key[2]) - 1, 15)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const match = note?.match(/^Auto withdrawal\s*(?:-|\u2013|\u2014)\s*(.+)$/i);
   return match?.[1]?.trim() || fallbackDate.toLocaleDateString("en-US", {
     month: "long",
