@@ -22,7 +22,7 @@ export function SalesRepsExportButton() {
         "Phone":               r.phone ?? "",
         "Commission (%)":      r.commission,
         "Total Orders":        r.ordersCount,
-        "Wallet Balance ($)":  r.walletBalance,
+        "Commission to Pay ($)": r.walletBalance,
         "Billing Address":     addressOneLine(r.billingAddress),
         "Shipping Address":    addressOneLine(r.shippingAddress),
         "Bank Name":           r.bankName ?? "",

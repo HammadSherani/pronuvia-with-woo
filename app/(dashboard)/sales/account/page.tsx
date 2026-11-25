@@ -1,3 +1,4 @@
+import { pendingCommissionByUser } from "@/lib/commission/lines";
 import { requireSalesRep }   from "@/lib/auth/dal";
 import { prisma }             from "@/lib/db/prisma";
 import { SalesAccountClient } from "@/components/sales/account-client";
@@ -22,5 +23,7 @@ export default async function SalesAccountPage() {
 
   if (!rep) return <div className="text-gray-500">Account not found.</div>;
 
-  return <SalesAccountClient rep={rep} />;
+  // "walletBalance" is the approved commission not paid yet (there is no wallet any more)
+  const toPay = (await pendingCommissionByUser("SALES_REP", [session.userId])).get(session.userId) ?? 0;
+  return <SalesAccountClient rep={{ ...rep, walletBalance: toPay }} />;
 }

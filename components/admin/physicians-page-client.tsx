@@ -69,7 +69,7 @@ function exportToExcel(physicians: Physician[]) {
     "Rep Upline Commission (%)":p.uplineCommission,
     "Medical Rep":              p.salesRep?.name ?? "",
     "Medical Rep Email":        p.salesRep?.email ?? "",
-    "Wallet Balance ($)":       p.walletBalance,
+    "Commission to Pay ($)":    p.walletBalance,
     "Total Orders":             p.ordersCount,
     "Sign-up Date":             formatDate(p.createdAt),
     "Added By":                 p.addedByRole,

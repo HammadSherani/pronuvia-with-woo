@@ -3,7 +3,6 @@
 import {
   useState,
   useEffect,
-  useActionState,
   forwardRef,
   useImperativeHandle,
   useRef,
@@ -20,14 +19,12 @@ import {
 import { stripePromise } from "@/lib/stripe/client";
 import { useCart } from "@/lib/cart/cart-context";
 import { confirmCardOrder } from "@/actions/sales-rep/confirm-card-order";
-import { payWithWallet } from "@/actions/sales-rep/wallet-pay";
 import { saveCheckoutAddress } from "@/actions/sales-rep/save-address";
 import { useCheckoutQuote, checkoutSubmission, type CheckoutPayload } from "@/lib/checkout/use-checkout-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
 import { CheckoutOrderSummary } from "@/components/shared/checkout-order-summary";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
-import { formatCurrency } from "@/lib/utils/currency";
 
 // ── Address helpers ─────────────────────────────────────────────────────────
 
@@ -209,14 +206,12 @@ const StripeInnerForm = forwardRef<StripeHandle, StripeFormProps>(
 type Props = {
   savedShippingAddress: string;
   savedBillingAddress:  string;
-  walletBalance:        number;
   commission:           number;
 };
 
 export function CheckoutClient({
   savedShippingAddress,
   savedBillingAddress,
-  walletBalance,
   commission,
 }: Props) {
   const { items, clearCart } = useCart();
@@ -248,26 +243,16 @@ export function CheckoutClient({
   } = quote;
 
   // payment
-  const [payMethod,      setPayMethod]      = useState<"CARD" | "WALLET">("CARD");
   const [notes,          setNotes]          = useState("");
   const [paymentReady,   setPaymentReady]   = useState(false);
   const [stripeError,    setStripeError]    = useState("");
   const [cardProcessing, setCardProcessing] = useState(false);
 
   const stripeRef    = useRef<StripeHandle>(null);
-  const walletSubmit = useRef<HTMLButtonElement>(null);
 
   const subtotal       = totals?.subtotal ?? parseFloat(items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2));
   const total          = totals?.total ?? 0;
   const cashback       = commission > 0 ? parseFloat((subtotal * commission / 100).toFixed(2)) : 0;
-  // While the total is being worked out, keep the wallet choice as it is
-  const canWallet      = walletBalance > 0 && (!totals || (walletBalance >= total && total > 0));
-
-  // If the total changes (coupon, shipping) and wallet can no longer cover it, fall back to card
-  useEffect(() => {
-    if (!canWallet && payMethod === "WALLET") setPayMethod("CARD");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canWallet]);
 
   const shipStr = addrToString(shipTo);
   const billStr = addrToString(billing);
@@ -293,23 +278,6 @@ export function CheckoutClient({
   const rememberAddress = () => {
     saveCheckoutAddress({ shipping: shipTo, billing }).catch(() => {});
   };
-
-  // wallet action
-  const [walletState, walletAction, walletPending] = useActionState(payWithWallet, undefined);
-  useEffect(() => {
-    if (!walletState) return;
-    if (walletState.success && walletState.orderNumber) {
-      toast.success("Order placed successfully!");
-      rememberAddress();
-      clearCart();
-      router.push(`/sales/invoice/${walletState.orderNumber}`);
-    } else if (walletState.message) {
-      toast.error(walletState.message);
-      // Prices, shipping or the coupon may have changed: show the new totals
-      retryShipping();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletState, clearCart, router]);
 
   const handleCardSuccess = (orderNumber: string) => {
     toast.success("Order placed successfully!");
@@ -358,17 +326,11 @@ export function CheckoutClient({
       toast.error("The order total is still being calculated.");
       return;
     }
-    if (payMethod === "CARD") {
-      stripeRef.current?.submit();
-    } else {
-      walletSubmit.current?.click();
-    }
+    stripeRef.current?.submit();
   };
 
   const isDisabled =
     cardProcessing ||
-    walletPending  ||
-    (payMethod === "WALLET" && !canWallet) ||
     !patientEmail.trim() ||
     !hasAddr(billing) || !hasAddr(shipTo) || !selectedShipping || !checkout;
 
@@ -389,7 +351,7 @@ export function CheckoutClient({
 
   return (
     <div className="">
-      <StripeLoadingOverlay visible={stripeReady && payMethod === "CARD" && !paymentReady} />
+      <StripeLoadingOverlay visible={stripeReady && !paymentReady} />
       {/* Title */}
       <h1 className="text-2xl font-semibold text-gray-900 mb-2">Checkout</h1>
       <div className="h-0.5 bg-blue-500 mb-6" />
@@ -484,19 +446,12 @@ export function CheckoutClient({
 
               {/* Card */}
               <div>
-                <label className="flex items-center gap-3 px-4 py-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="payMethod"
-                    checked={payMethod === "CARD"}
-                    onChange={() => setPayMethod("CARD")}
-                    className="accent-gray-900"
-                  />
+                <div className="flex items-center gap-3 px-4 py-3">
                   <span className="text-sm text-gray-800 font-medium">Credit / Debit Card</span>
-                </label>
+                </div>
 
                 {/* Card payment panel — Elements pre-loaded immediately, no PI needed until submit */}
-                {payMethod === "CARD" && (
+                {(
                   <div className="px-4 pb-4">
                     {!stripeReady ? (
                       <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-700">
@@ -551,24 +506,6 @@ export function CheckoutClient({
                 )}
               </div>
 
-              {/* Wallet — only shown when balance covers the order total */}
-              {canWallet && (
-                <div>
-                  <label className="flex items-center gap-3 px-4 py-3 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="payMethod"
-                      checked={payMethod === "WALLET"}
-                      onChange={() => setPayMethod("WALLET")}
-                      className="accent-gray-900"
-                    />
-                    <span className="text-sm text-gray-800 font-medium">Wallet Balance</span>
-                    <span className="ml-auto text-xs font-semibold text-[#3DBFA4]">
-                      {formatCurrency(walletBalance)} available
-                    </span>
-                  </label>
-                </div>
-              )}
             </div>
           </section>
 
@@ -578,19 +515,13 @@ export function CheckoutClient({
             <Link href="/terms" className="underline hover:text-gray-700">Terms and Conditions</Link>.
           </p>
 
-          {/* Hidden wallet form */}
-          <form action={walletAction} className="hidden">
-            <input type="hidden" name="checkout" value={checkout ? JSON.stringify(checkout) : ""} />
-            <button ref={walletSubmit} type="submit" aria-hidden="true" />
-          </form>
-
           {/* Place Order */}
           <button
             onClick={handlePlaceOrder}
             disabled={isDisabled}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-bold rounded transition-colors"
           >
-            {cardProcessing || walletPending ? (
+            {cardProcessing ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Placing order…

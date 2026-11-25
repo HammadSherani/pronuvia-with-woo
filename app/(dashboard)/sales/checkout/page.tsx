@@ -12,7 +12,6 @@ export default async function CheckoutPage() {
     select: {
       shippingAddress: true,
       billingAddress:  true,
-      walletBalance:   true,
       commission:      true,
     },
   });
@@ -21,7 +20,6 @@ export default async function CheckoutPage() {
     <CheckoutClient
       savedShippingAddress={rep?.shippingAddress ?? ""}
       savedBillingAddress={rep?.billingAddress ?? ""}
-      walletBalance={rep?.walletBalance ?? 0}
       commission={rep?.commission ?? 0}
     />
   );

@@ -84,7 +84,7 @@ export default async function SalesRepViewPage({ params }: Props) {
             {rep.commission}% commission
           </span>
           <span className="inline-flex px-3 py-1 bg-teal-50 text-teal-700 border border-teal-200 rounded-full text-sm font-medium">
-            ${rep.walletBalance.toFixed(2)} wallet
+            ${rep.walletBalance.toFixed(2)} to pay
           </span>
           <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-sm font-medium">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -103,7 +103,7 @@ export default async function SalesRepViewPage({ params }: Props) {
         <InfoRow label="Phone" value={rep.phone} />
         <InfoRow label="Website" value={rep.website} />
         <InfoRow label="Commission" value={`${rep.commission}%`} />
-        <InfoRow label="Wallet Balance" value={`$${rep.walletBalance.toFixed(2)}`} />
+        <InfoRow label="Commission to Pay" value={`$${rep.walletBalance.toFixed(2)}`} />
         <InfoRow label="Total Orders" value={String(rep.ordersCount)} />
         <InfoRow label="Member Since" value={formatDateLong(rep.createdAt)} />
       </Card>

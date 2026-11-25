@@ -12,8 +12,9 @@ const ACTIONS: Record<CommissionHistoryRow["action"], { label: string; style: st
   REJECTED:  { label: "Rejected",                   style: "bg-red-50 text-red-600" },
   MODIFIED:  { label: "Modified",                   style: "bg-blue-50 text-blue-700" },
   IN_PAYOUT: { label: "Added to Commission Payout", style: "bg-teal-50 text-teal-700" },
-  ADJUSTED:  { label: "Wallet adjusted",            style: "bg-indigo-50 text-indigo-700" },
+  ADJUSTED:  { label: "Adjusted",                   style: "bg-indigo-50 text-indigo-700" },
   PAID_OUT:  { label: "Paid out",                   style: "bg-violet-50 text-violet-700" },
+  DEDUCTED:  { label: "Taken off a payout",         style: "bg-orange-50 text-orange-700" },
   REFUNDED:  { label: "Commission refunded",        style: "bg-orange-50 text-orange-700" },
   ORDER_REFUND: { label: "Order refunded — commission cut", style: "bg-orange-50 text-orange-700" },
 };
@@ -36,14 +37,15 @@ export function CommissionHistory({ rows, showRole, showBy }: {
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/70">
-                {["Date", ...(showRole ? ["Commission of"] : []), "Action", "Commission", "Wallet", "Note", ...(showBy ? ["By"] : [])].map((h) => (
+                {["Date", ...(showRole ? ["Commission of"] : []), "Action", "Commission", "Change", "Note", ...(showBy ? ["By"] : [])].map((h) => (
                   <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap first:pl-5">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map((r) => {
-                const a = ACTIONS[r.action];
+                // An action this list doesn't know yet still shows (by its name)
+                const a = ACTIONS[r.action] ?? { label: String(r.action), style: "bg-gray-100 text-gray-600" };
                 return (
                   <tr key={r.id}>
                     <td className="pl-5 pr-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{formatDateTime(r.at)}</td>

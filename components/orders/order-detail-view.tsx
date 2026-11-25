@@ -220,7 +220,7 @@ export function OrderDetailView({ detail, backHref, invoiceHref, viewer }: {
             </p>
           )}
           <p className="text-xs text-gray-400 mt-2">
-            {order.commissionPaid ? "Paid to your wallet" : order.status === "CANCELLED" || order.status === "REFUNDED" ? "Not payable" : "Paid with the monthly payout"}
+            {order.status === "CANCELLED" || order.status === "REFUNDED" ? "Not payable" : order.commissionPaid ? "Approved — paid with the payout for this order's month" : "Paid with the payout for this order's month, once approved"}
           </p>
         </div>
 

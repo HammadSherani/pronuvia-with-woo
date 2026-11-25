@@ -1,4 +1,5 @@
-﻿import { requireAdmin } from "@/lib/auth/dal";
+﻿import { pendingCommissionByUser } from "@/lib/commission/lines";
+import { requireAdmin } from "@/lib/auth/dal";
 import { prisma } from "@/lib/db/prisma";
 import { PhysiciansPageClient } from "@/components/admin/physicians-page-client";
 
@@ -28,7 +29,11 @@ export default async function PhysiciansPage() {
     prisma.partneringPhysician.count(),
   ]);
 
+  // "Commission to pay": approved commission not paid yet (there is no wallet any more)
+  const toPay = await pendingCommissionByUser("PHYSICIAN");
+  const rows = physicians.map((p) => ({ ...p, walletBalance: toPay.get(p.id) ?? 0 }));
+
   return (
-    <PhysiciansPageClient physicians={physicians} total={total} />
+    <PhysiciansPageClient physicians={rows} total={total} />
   );
 }

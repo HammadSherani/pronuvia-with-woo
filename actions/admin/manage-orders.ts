@@ -78,14 +78,12 @@ export async function getOrderById(id: string) {
           id: true, firstName: true, lastName: true, email: true,
           nameOfPractice: true, commission: true,
           phone: true, addressOne: true, addressTwo: true, city: true, state: true, zipCode: true,
-          walletBalance: true,
         },
       },
       salesRep: {
         select: {
           id: true, name: true, firstName: true, lastName: true, email: true,
           phone: true, commission: true, billingAddress: true,
-          walletBalance: true,
         },
       },
     },

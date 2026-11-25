@@ -114,7 +114,7 @@ function ViewMode({ r, onEdit }: { r: Rep; onEdit: () => void }) {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Wallet Balance",      value: fmt(r.walletBalance), color: "#3DBFA4" },
+          { label: "Commission to Pay",   value: fmt(r.walletBalance), color: "#3DBFA4" },
           { label: "Total Orders",         value: String(r.ordersCount), color: "#5BB8D4" },
           { label: "Downline Physicians",  value: String(r._count.physicians), color: "#8b5cf6" },
         ].map(({ label, value, color }) => (

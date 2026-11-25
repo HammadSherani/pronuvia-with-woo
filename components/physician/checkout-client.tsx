@@ -6,7 +6,6 @@ import {
   forwardRef,
   useImperativeHandle,
   useRef,
-  useActionState,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,13 +19,11 @@ import {
 import { stripePromise } from "@/lib/stripe/client";
 import { useCart } from "@/lib/cart/cart-context";
 import { confirmPhysicianCardOrder }  from "@/actions/physician/confirm-card-order";
-import { payWithPhysicianWallet }     from "@/actions/physician/wallet-pay";
 import { useCheckoutQuote, checkoutSubmission, type CheckoutPayload } from "@/lib/checkout/use-checkout-quote";
 import { AddressFields, EMPTY_ADDRESS, migrateAddressData, serializeAddress } from "@/components/shared/address-fields";
 import type { AddressData } from "@/components/shared/address-fields";
 import { CheckoutOrderSummary } from "@/components/shared/checkout-order-summary";
 import { StripeLoadingOverlay } from "@/components/shared/stripe-loading-overlay";
-import { formatCurrency } from "@/lib/utils/currency";
 
 function hasAddr(a: AddressData) {
   return !!(a.firstName || a.address1 || a.city);
@@ -184,10 +181,9 @@ const StripeInnerForm = forwardRef<StripeHandle, {
 type Props = {
   physicianEmail:  string;
   initialAddress:  Partial<AddressData> & { country?: string; state?: string };
-  walletBalance:   number;
 };
 
-export function PhysicianCheckoutClient({ physicianEmail, initialAddress, walletBalance }: Props) {
+export function PhysicianCheckoutClient({ physicianEmail, initialAddress }: Props) {
   const { items, clearCart } = useCart();
   const router = useRouter();
 
@@ -218,13 +214,8 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
   const [cardProcessing, setCardProcessing] = useState(false);
 
   const stripeRef    = useRef<StripeHandle>(null);
-  const walletFormRef = useRef<HTMLFormElement>(null);
-  const [payMethod,    setPayMethod]    = useState<"CARD" | "WALLET">("CARD");
-  const [walletState, walletFormAction, walletPending] = useActionState(payWithPhysicianWallet, undefined);
 
   const total          = totals?.total ?? 0;
-  // While the total is being worked out, keep the wallet choice as it is
-  const canWallet      = walletBalance > 0 && (!totals || (walletBalance >= total && total > 0));
 
 
   const shipStr = addrToString(shipTo);
@@ -269,20 +260,6 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!walletState) return;
-    if (walletState.success && walletState.orderNumber) {
-      toast.success("Order placed successfully!");
-      clearCart();
-      router.push(`/physician/invoice/${walletState.orderNumber}`);
-    } else if (!walletState.success && walletState.message) {
-      toast.error(walletState.message);
-      // Prices, shipping or the coupon may have changed: show the new totals
-      retryShipping();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletState]);
-
   const handlePlaceOrder = () => {
     if (!email.trim()) { toast.error("Please enter the patient's email address."); return; }
     if (!hasAddr(billing)) { toast.error("Please enter the billing address."); return; }
@@ -295,11 +272,7 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
       toast.error("The order total is still being calculated.");
       return;
     }
-    if (payMethod === "WALLET") {
-      walletFormRef.current?.requestSubmit();
-    } else {
-      stripeRef.current?.submit();
-    }
+    stripeRef.current?.submit();
   };
 
   if (items.length === 0) {
@@ -318,7 +291,7 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
 
   return (
     <div className="">
-      <StripeLoadingOverlay visible={stripeReady && payMethod === "CARD" && !paymentReady} />
+      <StripeLoadingOverlay visible={stripeReady && !paymentReady} />
 
       <h1 className="text-2xl font-semibold text-gray-900 mb-2">Checkout</h1>
       <div className="h-0.5 bg-gray-900 mb-6" />
@@ -393,43 +366,12 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
           <section>
             <h2 className="text-base font-semibold text-gray-800 mb-3">Payment</h2>
 
-            {/* Payment method selector — only shown when wallet can cover the order */}
-            {canWallet && (
-              <div className="border border-gray-300 rounded divide-y divide-gray-100 mb-4">
-                <label className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors">
-                  <input
-                    type="radio"
-                    name="payMethod"
-                    checked={payMethod === "CARD"}
-                    onChange={() => setPayMethod("CARD")}
-                    className="accent-gray-900"
-                  />
-                  <span className="flex-1 text-sm font-medium text-gray-800">Credit / Debit Card</span>
-                </label>
-                <label className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors">
-                  <input
-                    type="radio"
-                    name="payMethod"
-                    checked={payMethod === "WALLET"}
-                    onChange={() => setPayMethod("WALLET")}
-                    className="accent-gray-900"
-                  />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-800">Wallet Credit</p>
-                    <p className="text-xs text-gray-500">Balance: {formatCurrency(walletBalance)}</p>
-                  </div>
-                </label>
-              </div>
-            )}
-
             {/* Card payment panel — Elements pre-loaded immediately, no PI needed until submit */}
-            {payMethod === "CARD" && (
+            {(
               <div className="border border-gray-300 rounded p-4">
-                {!canWallet && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-sm text-gray-800 font-medium">Credit / Debit Card</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-sm text-gray-800 font-medium">Credit / Debit Card</span>
+                </div>
                 {!stripeReady ? (
                   <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-700">
                     Stripe is not configured.
@@ -477,25 +419,6 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
               </div>
             )}
 
-            {/* Wallet payment panel */}
-            {payMethod === "WALLET" && (
-              <div className="border border-gray-300 rounded p-4 space-y-3">
-                <p className="text-sm text-gray-700">
-                  Your wallet balance of{" "}
-                  <span className="font-semibold">{formatCurrency(walletBalance)}</span>{" "}
-                  will be used to pay the order total of{" "}
-                  <span className="font-semibold">{formatCurrency(total)}</span>.
-                </p>
-                {walletState && !walletState.success && walletState.message && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded px-3 py-2">
-                    {walletState.message}
-                  </p>
-                )}
-                <form ref={walletFormRef} action={walletFormAction} className="hidden">
-                  <input type="hidden" name="checkout" value={checkout ? JSON.stringify(checkout) : ""} />
-                </form>
-              </div>
-            )}
           </section>
 
           <p className="text-xs text-gray-500">
@@ -504,9 +427,9 @@ export function PhysicianCheckoutClient({ physicianEmail, initialAddress, wallet
           </p>
 
           <button type="button" onClick={handlePlaceOrder}
-            disabled={cardProcessing || walletPending || !email.trim() || !hasAddr(billing) || !hasAddr(shipTo) || !selectedShipping || !checkout}
+            disabled={cardProcessing || !email.trim() || !hasAddr(billing) || !hasAddr(shipTo) || !selectedShipping || !checkout}
             className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-bold rounded transition-colors">
-            {(cardProcessing || walletPending) ? (
+            {cardProcessing ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Placing order…

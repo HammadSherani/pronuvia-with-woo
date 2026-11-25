@@ -71,8 +71,9 @@ export async function reconcileOrderCommission(orderId: string): Promise<void> {
       where:  { orderId, userRole: role },
       select: { id: true, key: true, kind: true, status: true, amount: true, userId: true, periodKey: true },
     });
-    // Settled on the old site: not ours to recompute
-    if (lines.some((l) => l.kind === "OLD_SITE")) continue;
+    // Settled on the old site for this person: not ours to recompute (an old
+    // row of someone else, e.g. the upline's upline, doesn't count)
+    if (lines.some((l) => l.kind === "OLD_SITE" && l.userId === userId)) continue;
     const open = lines.find((l) => l.key === openKey(orderId, role));
     if (open?.userId && open.userId !== userId) touched.set(open.userId, role);
 
@@ -198,6 +199,14 @@ export async function refreshAllPayoutRequests(): Promise<{ users: number }> {
 
 /** Gives a line that leaves PENDING a key of its own, so the order can get a new open line. */
 export const settledKey = (status: "paid" | "cancelled", lineId: string) => `${status}:${lineId}:${randomUUID().slice(0, 8)}`;
+
+/** Approved commission waiting to be paid, per user (for lists and exports). */
+export async function pendingCommissionByUser(userRole: PayoutRole, userIds?: string[]): Promise<Map<string, number>> {
+  const rows = await prisma.commissionLine.groupBy({
+    by: ["userId"], where: { userRole, status: "PENDING", ...(userIds && { userId: { in: userIds } }) }, _sum: { amount: true },
+  });
+  return new Map(rows.map((r) => [r.userId, r2(r._sum.amount ?? 0)]));
+}
 
 /** The user's commission at a glance: pending (by month), needs review, paid. */
 export async function commissionSummary(userId: string, userRole: PayoutRole) {

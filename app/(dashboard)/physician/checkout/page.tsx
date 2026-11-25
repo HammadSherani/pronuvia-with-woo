@@ -20,7 +20,6 @@ export default async function PhysicianCheckoutPage() {
       state:         true,
       zipCode:       true,
       country:       true,
-      walletBalance: true,
     },
   });
 
@@ -40,7 +39,6 @@ export default async function PhysicianCheckoutPage() {
     <PhysicianCheckoutClient
       physicianEmail={physician?.email ?? session.email ?? ""}
       initialAddress={initialAddress}
-      walletBalance={physician?.walletBalance ?? 0}
     />
   );
 }

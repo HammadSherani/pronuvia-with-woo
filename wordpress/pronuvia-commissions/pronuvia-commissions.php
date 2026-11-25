@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Pronuvia Commissions
  * Description: Approve, reject or modify the doctor / sales rep commission of a Pronuvia order, on the WooCommerce order page.
- * Version:     1.6.0
+ * Version:     1.6.1
  * Author:      Pronuvia
  * Requires PHP: 7.4
  *
@@ -23,14 +23,14 @@
  * shows what is left as the commission; Modify sets what is left (the cut
  * stays on top); with nothing left the row offers no actions.
  *
- * Once every commission on the order is reviewed it goes into the wallets and
+ * Once every commission on the order is reviewed it goes into Commission Payout and
  * Commission Payout (`pronuvia_commission_paid` = yes, "in payout"). It can
  * still be approved / rejected / modified as often as needed: Pronuvia moves
- * the wallet by the difference. When the user's payout is approved in
+ * the payout by the difference. When the user's payout is approved in
  * Pronuvia, that row is paid out (`pronuvia_commission_paid_out`, a JSON list
  * of roles) and fixed; the admin can then only "Refund commission": take back
  * any part of it (e.g. after the order was refunded). Pronuvia takes that off
- * the user's wallet (which may go below zero) and lists it under Rejected
+ * the user's next payout (a deduction) and lists it under Rejected
  * Commission.
  */
 
@@ -63,7 +63,7 @@ function pronuvia_comm_read( $order ) {
 	return is_array( $val ) ? $val : array();
 }
 
-/** In the wallets / Commission Payout (still changeable until paid out). */
+/** In Commission Payout (still changeable until paid out). */
 function pronuvia_comm_in_payout( $order ) {
 	return $order->get_meta( PRONUVIA_COMM_PAID_KEY ) === 'yes';
 }
@@ -218,7 +218,7 @@ function pronuvia_comm_box( $post_or_order ) {
 	<?php if ( $any_open ) : ?>
 		<p class="description">
 			<?php echo $in_payout
-				? 'This commission is in Commission Payout in Pronuvia. It can still be changed until the payout is approved there; the wallet follows each change. Modify changes only the amount, not the status.'
+				? 'This commission is in Commission Payout in Pronuvia. It can still be changed until the payout is approved there; the payout follows each change. Modify changes only the amount, not the status.'
 				: 'An approved commission moves to Commission Payout in Pronuvia once every commission on this order is reviewed. It can be changed until the payout is approved there. Modify changes only the amount, not the status.'; ?>
 		</p>
 	<?php endif; ?>

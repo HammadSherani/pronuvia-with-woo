@@ -1,5 +1,6 @@
 ﻿"use server";
 
+import { pendingCommissionByUser } from "@/lib/commission/lines";
 import { parseBankAccountType, parseBankOwnershipType } from "@/lib/bank/labels";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
@@ -251,7 +252,8 @@ export async function listSalesReps(opts?: { skip?: number; take?: number }) {
 
 export async function getAllSalesRepsForExport() {
   await requireAdmin();
-  return prisma.salesRepresentative.findMany({
+  const toPay = await pendingCommissionByUser("SALES_REP");
+  const reps = await prisma.salesRepresentative.findMany({
     select: {
       id: true, name: true, firstName: true, lastName: true,
       email: true, loginId: true, phone: true, commission: true, ordersCount: true, walletBalance: true,
@@ -265,11 +267,13 @@ export async function getAllSalesRepsForExport() {
     },
     orderBy: { createdAt: "desc" },
   });
+  // "walletBalance" is the approved commission not paid yet (there is no wallet any more)
+  return reps.map((r) => ({ ...r, walletBalance: toPay.get(r.id) ?? 0 }));
 }
 
 export async function getSalesRepById(id: string) {
   await requireAdmin();
-  return prisma.salesRepresentative.findUnique({
+  const rep = await prisma.salesRepresentative.findUnique({
     where: { id },
     select: {
       id: true, name: true, firstName: true, lastName: true, email: true,
@@ -289,4 +293,7 @@ export async function getSalesRepById(id: string) {
       },
     },
   });
+  if (!rep) return rep;
+  // "walletBalance" is the approved commission not paid yet (there is no wallet any more)
+  return { ...rep, walletBalance: (await pendingCommissionByUser("SALES_REP", [id])).get(id) ?? 0 };
 }
