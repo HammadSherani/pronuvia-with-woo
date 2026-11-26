@@ -5,7 +5,7 @@ import { prisma }        from "@/lib/db/prisma";
 import { requireAdmin }  from "@/lib/auth/dal";
 import { sendMail }      from "@/lib/email/mailer";
 import { addBankDetailsEmail } from "@/lib/email/templates";
-import { payoutsLocked, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
+import { payoutsLocked, payoutsLockedFor, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
 import { bankDetailsComplete } from "@/lib/bank/labels";
 
 type PayoutRole = "PHYSICIAN" | "SALES_REP";
@@ -49,7 +49,12 @@ export async function notifyUserAddBank(
   userRole: PayoutRole,
 ): Promise<{ success: boolean; message: string }> {
   await requireAdmin();
-  if (payoutsLocked()) return { success: false, message: PAYOUTS_LOCKED_MESSAGE };
+  if (payoutsLocked()) {
+    const u = userRole === "PHYSICIAN"
+      ? await prisma.partneringPhysician.findUnique({ where: { id: userId }, select: { email: true } })
+      : await prisma.salesRepresentative.findUnique({ where: { id: userId }, select: { email: true } });
+    if (payoutsLockedFor(u?.email)) return { success: false, message: PAYOUTS_LOCKED_MESSAGE };
+  }
 
   const r = await askForBankDetails(userId, userRole);
   if (!r) return { success: false, message: "Failed to notify user." };

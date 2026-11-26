@@ -5,7 +5,7 @@ import { PageHeader }       from "@/components/admin/page-header";
 import { CommissionPayoutClient } from "@/components/admin/commission-payout-client";
 import { getCurrentPeriod } from "@/lib/withdrawals/monthly";
 import { wpAdmin } from "@/lib/woo/admin-links";
-import { payoutsLocked } from "@/lib/withdrawals/lock";
+import { payoutsLocked, payoutTestAccounts } from "@/lib/withdrawals/lock";
 import { countUsersToNotify } from "@/actions/admin/notify-bank";
 import { periodLabel } from "@/lib/commission/lines";
 import type { NeedsReviewEntry } from "@/components/admin/needs-review-section";
@@ -463,6 +463,7 @@ export default async function CommissionPayoutPage() {
         rejectedCommission={rejectedCommission}
         monthLabel={monthLabel}
         locked={payoutsLocked()}
+        testAccounts={payoutTestAccounts()}
         notifyAllCount={await countUsersToNotify()}
         needsReview={needsReview}
       />

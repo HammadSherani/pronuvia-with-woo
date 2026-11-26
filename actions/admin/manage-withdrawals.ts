@@ -6,12 +6,22 @@ import { requireAdmin }                            from "@/lib/auth/dal";
 import { sendPayoutApprovalEmail, type ApprovedPayoutRequest } from "@/lib/withdrawals/notifications";
 import { markCommissionPaidOutInWoo }            from "@/lib/orders/commission-paid";
 import { approvePayout, rejectPayout, type DecidedPayout } from "@/lib/commission/payout";
-import { payoutsLocked, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
+import { payoutsLocked, payoutsLockedFor, payoutTestAccounts, PAYOUTS_LOCKED_MESSAGE } from "@/lib/withdrawals/lock";
 
 export type WithdrawalActionState = {
   success?: boolean;
   message?: string;
 } | undefined;
+
+/** The email of the doctor / rep a payout request is for. */
+async function requestUserEmail(requestId: string): Promise<string | null> {
+  const r = await prisma.withdrawRequest.findUnique({ where: { id: requestId }, select: { userId: true, userRole: true } });
+  if (!r) return null;
+  const u = r.userRole === "PHYSICIAN"
+    ? await prisma.partneringPhysician.findUnique({ where: { id: r.userId }, select: { email: true } })
+    : await prisma.salesRepresentative.findUnique({ where: { id: r.userId }, select: { email: true } });
+  return u?.email ?? null;
+}
 
 // Pays (approve) or turns down (reject) one payout request through its
 // commission lines (lib/commission/payout). Locked while PAYOUTS_LOCKED is on.
@@ -21,8 +31,9 @@ async function applyWithdrawDecision(
   adminNote: string | undefined,
   expectedAmount?: number,
 ): Promise<DecidedPayout | null> {
-  // Checked here so every way of approving (single, bulk, detail page) is covered
-  if (action === "APPROVED" && payoutsLocked()) throw new Error(PAYOUTS_LOCKED_MESSAGE);
+  // Checked here so every way of approving (single, bulk, detail page) is
+  // covered; a test account (PAYOUTS_TEST_ACCOUNTS) stays open
+  if (action === "APPROVED" && payoutsLocked() && payoutsLockedFor(await requestUserEmail(requestId))) throw new Error(PAYOUTS_LOCKED_MESSAGE);
   const result = action === "APPROVED"
     ? await approvePayout(requestId, { adminNote, expectedAmount })
     : await rejectPayout(requestId, { adminNote });
@@ -90,7 +101,8 @@ export async function bulkUpdateWithdrawals(
   await requireAdmin();
 
   if (!ids.length) return { success: false, processed: 0, failed: 0, message: "No IDs provided." };
-  if (action === "APPROVED" && payoutsLocked()) {
+  // Locked with no test accounts: nothing to try (with test accounts, each request is checked)
+  if (action === "APPROVED" && payoutsLocked() && !payoutTestAccounts().length) {
     return { success: false, processed: 0, failed: ids.length, message: PAYOUTS_LOCKED_MESSAGE };
   }
 

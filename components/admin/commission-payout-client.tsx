@@ -88,6 +88,8 @@ interface Props {
   monthLabel:   string;
   /** PAYOUTS_LOCKED: Approve and Notify are off (see lib/withdrawals/lock) */
   locked?:      boolean;
+  /** Test accounts (emails) whose payouts stay open while locked */
+  testAccounts?: string[];
   /** Users with a pending payout, no bank details and not asked yet ("Notify all") */
   notifyAllCount?: number;
   /** Old-site commission dated on or before 12/31/2025, checked by the admin first */
@@ -422,7 +424,7 @@ function TablePagination({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false, notifyAllCount = 0, needsReview = [] }: Props) {
+export function CommissionPayoutClient({ pending: initialPending, rejected, currentMonth, rejectedCommission, monthLabel, locked = false, testAccounts = [], notifyAllCount = 0, needsReview = [] }: Props) {
   const [pending,      setPending]     = useState(initialPending);
   const [selected,     setSelected]    = useState<Set<string>>(new Set());
   const [bulkModal,    setBulkModal]   = useState(false);
@@ -442,7 +444,9 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
 
   // Everything the approval needs (incl. checking/savings, personal/business)
   const hasBank       = (r: PendingRow) => bankDetailsComplete(r.user);
-  const bankRows      = pending.filter((r) => hasBank(r) && r.amount > 0);
+  // Locked, except for the test accounts
+  const rowLocked     = (r: PendingRow) => locked && !testAccounts.includes(r.user.email.trim().toLowerCase());
+  const bankRows      = pending.filter((r) => hasBank(r) && r.amount > 0 && !rowLocked(r));
   const allBankSel    = bankRows.length > 0 && bankRows.every((r) => selected.has(r.id));
   const someSel       = selected.size > 0 && !allBankSel;
   const toggleSelect  = (id: string, hasBankAcc: boolean) => {
@@ -509,6 +513,7 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
             <p className="font-semibold">Payouts are locked</p>
             <p className="mt-0.5 text-amber-700">
               The commission data is being checked against the old site, so nothing is paid twice. Approve and Notify are turned off; you can still look at every request and its orders.
+              {testAccounts.length > 0 && <> Test accounts stay open: {testAccounts.join(", ")}.</>}
             </p>
           </div>
         </div>
@@ -544,8 +549,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
               </span>
               <button
                 type="button"
-                disabled={bulkBusy || locked}
-                title={locked ? "Payouts are locked" : undefined}
+                disabled={bulkBusy || bankRows.length === 0}
+                title={locked ? "Payouts are locked (test accounts only)" : undefined}
                 onClick={() => setBulkModal(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded-lg transition-colors"
               >
@@ -671,8 +676,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                               /* No bank account — show Notify button only */
                               <button
                                 type="button"
-                                title={locked ? "Payouts are locked" : "Notify user to add bank account"}
-                                disabled={locked}
+                                title={rowLocked(row) ? "Payouts are locked" : "Notify user to add bank account"}
+                                disabled={rowLocked(row)}
                                 onClick={() =>
                                   startNotify(async () => {
                                     const res = await notifyUserAddBank(row.userId, row.userRole);
@@ -692,8 +697,8 @@ export function CommissionPayoutClient({ pending: initialPending, rejected, curr
                             <button
                               type="button"
                               onClick={() => setActionModal({ row, action: "APPROVED" })}
-                              disabled={locked || row.amount <= 0}
-                              title={locked ? "Payouts are locked" : row.amount <= 0 ? "Only deductions: they come off this user's next payout" : undefined}
+                              disabled={rowLocked(row) || row.amount <= 0}
+                              title={rowLocked(row) ? "Payouts are locked" : row.amount <= 0 ? "Only deductions: they come off this user's next payout" : undefined}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-500"
                             >
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

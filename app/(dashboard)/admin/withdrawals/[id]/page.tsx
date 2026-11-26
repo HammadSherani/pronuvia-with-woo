@@ -3,7 +3,7 @@ import Link           from "next/link";
 import { requireAdmin } from "@/lib/auth/dal";
 import { prisma }      from "@/lib/db/prisma";
 import { WithdrawalDetailActions } from "@/components/admin/withdrawal-detail-actions";
-import { payoutsLocked } from "@/lib/withdrawals/lock";
+import { payoutsLockedFor } from "@/lib/withdrawals/lock";
 import { OrderStatus } from "@/generated/prisma/enums";
 import { formatDate, formatMonthYear } from "@/lib/utils/timezone";
 import { getPayoutStatementOrders } from "@/lib/withdrawals/statement";
@@ -165,7 +165,7 @@ export default async function WithdrawalOrdersPage({ params }: Props) {
               userName={userName}
               userEmail={user?.email ?? ""}
               period={period}
-              locked={payoutsLocked()}
+              locked={payoutsLockedFor(user?.email)}
             />
           )}
           {request.status === "APPROVED" && (
