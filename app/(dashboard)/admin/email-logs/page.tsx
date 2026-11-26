@@ -14,6 +14,7 @@ export const metadata = { title: "Email Logs – Pronuvia Admin" };
 const STATUS_STYLES: Record<string, string> = {
   SENT:    "bg-emerald-50 text-emerald-700",
   FAILED:  "bg-red-50 text-red-700",
+  BLOCKED: "bg-gray-100 text-gray-600",
   QUEUED:  "bg-amber-50 text-amber-700",
   BOUNCED: "bg-orange-50 text-orange-700",
 };
@@ -56,6 +57,7 @@ export default async function EmailLogsPage({
           <option value="">All statuses</option>
           <option value="SENT">Sent</option>
           <option value="FAILED">Failed</option>
+          <option value="BLOCKED">Blocked (test site)</option>
           <option value="QUEUED">Queued</option>
           <option value="BOUNCED">Bounced</option>
         </select>

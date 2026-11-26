@@ -531,6 +531,7 @@ enum EmailLogStatus {
   SENT
   FAILED
   BOUNCED
+  BLOCKED   // not sent: the recipient is not on EMAIL_ALLOWLIST (test site)
 }
 
 model EmailLog {

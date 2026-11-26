@@ -1,3 +1,4 @@
+import { allowedRecipients, emailAllowlistActive } from "./allowlist";
 import sgMail    from "@sendgrid/mail";
 import nodemailer from "nodemailer";
 import fs         from "fs";
@@ -52,7 +53,7 @@ async function logEmail(entry: {
   subject:         string;
   type?:           string;
   relatedId?:      string;
-  status:          "SENT" | "FAILED";
+  status:          "SENT" | "FAILED" | "BLOCKED";
   provider?:       "sendgrid" | "smtp";
   errorMessage?:   string;
   responsePayload?: unknown;
@@ -64,7 +65,7 @@ async function logEmail(entry: {
         subject:         entry.subject,
         type:            entry.type || guessTypeFromSubject(entry.subject),
         relatedId:       entry.relatedId,
-        status:          entry.status === "SENT" ? EmailLogStatus.SENT : EmailLogStatus.FAILED,
+        status:          entry.status === "SENT" ? EmailLogStatus.SENT : entry.status === "BLOCKED" ? EmailLogStatus.BLOCKED : EmailLogStatus.FAILED,
         provider:        entry.provider,
         errorMessage:    entry.errorMessage,
         responsePayload: entry.responsePayload == null ? undefined : JSON.parse(JSON.stringify(entry.responsePayload)),
@@ -94,6 +95,21 @@ export async function sendMail(opts: {
    * to the record it's about — an order number, a user id, etc. */
   relatedId?:   string;
 }) {
+  // Test site (EMAIL_ALLOWLIST): only allowed addresses get email; the rest
+  // is logged as BLOCKED and never reaches the provider
+  if (emailAllowlistActive()) {
+    const asList = (v?: string | string[]) => (Array.isArray(v) ? v : v ? [v] : []).map((e) => e.trim()).filter(Boolean);
+    const gate = allowedRecipients(opts.to, asList(opts.cc), asList(opts.bcc));
+    for (const addr of gate.blocked) {
+      await logEmail({ to: addr, subject: opts.subject, type: opts.type, relatedId: opts.relatedId, status: "BLOCKED", errorMessage: "Not sent: not on EMAIL_ALLOWLIST (test site)" });
+    }
+    if (!gate.to) {
+      console.log("[mailer] blocked (EMAIL_ALLOWLIST):", opts.to, "| subject:", opts.subject);
+      return { blocked: true as const };
+    }
+    opts = { ...opts, to: gate.to, cc: gate.cc, bcc: gate.bcc };
+  }
+
   const rawFrom = opts.from || DEFAULT_EMAIL_FROM;
   const replyTo = process.env.MAIL_REPLY_TO || "contact@pronuvia.com";
 
